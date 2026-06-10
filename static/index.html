@@ -1792,12 +1792,30 @@ async function renderAdminGantt(){
       +'</div>';
   }
 
-  var memCbs=agAllMembers.map(function(m){
-    var chk=agShowAll||agMembers.includes(m.id);
-    var tag=m.is_admin?' <span style="font-size:10px;color:var(--acc)">(管)</span>':'';
-    return '<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--s2)">'
-      +'<input type="checkbox" value="'+m.id+'" '+(chk?'checked':'')+' onchange="toggleAgMember('+m.id+',this.checked)" style="accent-color:var(--pri)"> '+esc(m.name)+tag+'</label>';
-  }).join('');
+  var memCbs='';
+  if(agGroups.length>1){
+    // 按组分组展示
+    agGroups.forEach(function(g){
+      var groupMembers=agAllMembers.filter(function(m){return m.group_name===g;});
+      memCbs+='<div style="width:100%;display:flex;align-items:center;gap:6px;margin:4px 0 2px">'
+        +'<span style="font-size:11px;font-weight:600;color:var(--tx2);white-space:nowrap">'+esc(g)+'</span>'
+        +'<div style="flex:1;height:1px;background:var(--border)"></div>'
+        +'</div>';
+      groupMembers.forEach(function(m){
+        var chk=agShowAll||agMembers.includes(m.id);
+        var tag=m.is_admin?' <span style="font-size:10px;color:var(--acc)">(管)</span>':'';
+        memCbs+='<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--s2)">'
+          +'<input type="checkbox" value="'+m.id+'" '+(chk?'checked':'')+' onchange="toggleAgMember('+m.id+',this.checked)" style="accent-color:var(--pri)"> '+esc(m.name)+tag+'</label>';
+      });
+    });
+  }else{
+    agAllMembers.forEach(function(m){
+      var chk=agShowAll||agMembers.includes(m.id);
+      var tag=m.is_admin?' <span style="font-size:10px;color:var(--acc)">(管)</span>':'';
+      memCbs+='<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--s2)">'
+        +'<input type="checkbox" value="'+m.id+'" '+(chk?'checked':'')+' onchange="toggleAgMember('+m.id+',this.checked)" style="accent-color:var(--pri)"> '+esc(m.name)+tag+'</label>';
+    });
+  }
 
   // 日期高亮筛选按钮
   var t0=today(), y0=getYesterday();
