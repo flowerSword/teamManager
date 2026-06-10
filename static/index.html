@@ -1728,7 +1728,7 @@ function renderProfile(){
       <div class="fgroup"><label class="flabel">确认新密码</label><input id="pf-npw2" class="fi" type="password"></div>
       <button class="btn btn-pri" onclick="changePw()">修改密码</button>
     </div>
-    <div class="card">
+    ${ME.is_admin?`<div class="card">
       <div class="card-hd"><div class="ctitle">🎨 外观主题</div></div>
       <div style="margin-bottom:20px">
         <div style="font-size:11px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">配色方案</div>
@@ -1754,20 +1754,22 @@ function renderProfile(){
         </div>
         <div id="bg-no-img" style="display:${hasBg?'none':'block'};font-size:12px;color:var(--tx3)">暂未设置背景图，支持 JPG / PNG / WebP，建议使用大尺寸图片（≥1920×1080）</div>
       </div>
-    </div>
+    </div>`:''}
   </div>`;
-  // mark active theme
-  document.querySelectorAll('.sw-item').forEach(el=>{
-    const a=el.dataset.theme===curTheme;
-    const sw=el.querySelector('.theme-sw');
-    if(sw){sw.style.borderColor=a?'var(--pri)':'transparent';sw.style.boxShadow=a?'0 0 0 3px rgba(59,130,246,.3)':'none';}
-    const lbl=el.querySelector('span');
-    if(lbl) lbl.style.color=a?'var(--pri)':'var(--tx3)';
-  });
-  // set bg preview image src (avoid embedding data in template)
-  if(hasBg){
-    const img=document.querySelector('#bg-preview-wrap img');
-    if(img) img.src=localStorage.getItem('tm_bg_img');
+  if(ME.is_admin){
+    // mark active theme swatch
+    document.querySelectorAll('.sw-item').forEach(el=>{
+      const a=el.dataset.theme===curTheme;
+      const sw=el.querySelector('.theme-sw');
+      if(sw){sw.style.borderColor=a?'var(--pri)':'transparent';sw.style.boxShadow=a?'0 0 0 3px rgba(59,130,246,.3)':'none';}
+      const lbl=el.querySelector('span');
+      if(lbl) lbl.style.color=a?'var(--pri)':'var(--tx3)';
+    });
+    // set bg preview image src (avoid embedding data in template)
+    if(hasBg){
+      const img=document.querySelector('#bg-preview-wrap img');
+      if(img) img.src=localStorage.getItem('tm_bg_img');
+    }
   }
 }
 async function saveProfile(){
