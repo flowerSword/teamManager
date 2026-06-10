@@ -8,18 +8,21 @@
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0f172a;--s1:#1e293b;--s2:#273348;--s3:#1a2744;
+  --bg-rgb:15,23,42;--s1-rgb:30,41,59;--s2-rgb:39,51,72;
   --border:#334155;--border2:#2d3f5a;
   --pri:#3b82f6;--pri2:#1d4ed8;--acc:#06b6d4;
   --ok:#10b981;--warn:#f59e0b;--err:#ef4444;
   --tx:#f1f5f9;--tx2:#94a3b8;--tx3:#64748b;
-  --r:10px;--rl:16px
+  --r:10px;--rl:16px;
+  --row-hover:rgba(30,41,59,.4);
+  --login-g1:#0f3460;--login-g2:#0c2a4a
 }
 body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh}
 
 /* LOGIN */
 #lp{display:flex;align-items:center;justify-content:center;min-height:100vh;
-  background:radial-gradient(ellipse at 20% 50%,#0f3460,var(--bg) 60%),
-             radial-gradient(ellipse at 80% 20%,#0c2a4a,transparent 50%)}
+  background:radial-gradient(ellipse at 20% 50%,var(--login-g1),var(--bg) 60%),
+             radial-gradient(ellipse at 80% 20%,var(--login-g2),transparent 50%)}
 .lbox{width:420px;background:var(--s1);border:1px solid var(--border);border-radius:var(--rl);
   padding:40px;box-shadow:0 25px 60px rgba(0,0,0,.5)}
 .llogo{text-align:center;margin-bottom:28px}
@@ -93,7 +96,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th{background:var(--s2);padding:9px 11px;text-align:left;font-weight:600;color:var(--tx2);
    border-bottom:1px solid var(--border);white-space:nowrap}
 td{padding:9px 11px;border-bottom:1px solid rgba(51,65,85,.4);vertical-align:middle}
-tr:hover td{background:rgba(30,41,59,.4)}
+tr:hover td{background:var(--row-hover)}
 tr.hi td{background:rgba(59,130,246,.04)}
 
 /* BADGE */
@@ -177,7 +180,7 @@ textarea.fi{resize:vertical;min-height:64px}
 .gantt-day{flex:1;text-align:center;color:var(--tx3);font-size:10px;min-width:20px}
 .gantt-day.today{color:var(--pri);font-weight:700}
 .gantt-row{display:flex;align-items:flex-start;padding:4px 0;border-bottom:1px solid rgba(51,65,85,.3)}
-.gantt-row:hover{background:rgba(30,41,59,.3)}
+.gantt-row:hover{background:var(--row-hover)}
 .gantt-row-hl{background:rgba(251,191,36,.1);border-left:3px solid #fbbf24;}
 .gm-hover-label:hover{background:rgba(59,130,246,.18)!important;}
 .gantt-name{width:280px;flex-shrink:0;overflow:hidden;white-space:normal;word-break:break-all;color:var(--tx);padding-right:8px;font-size:12px;line-height:1.5}
@@ -209,6 +212,19 @@ textarea.fi{resize:vertical;min-height:64px}
 .ttabs{display:flex;gap:3px;margin-bottom:16px;background:var(--s2);padding:4px;border-radius:10px;width:fit-content}
 .ttab{padding:6px 14px;border-radius:7px;font-size:13px;cursor:pointer;color:var(--tx2);border:none;background:none;transition:all .15s}
 .ttab.active{background:var(--pri);color:#fff}
+
+/* APPEARANCE / BG IMAGE */
+body.has-bg-img{background-size:cover!important;background-attachment:fixed!important;background-repeat:no-repeat!important;background-position:center!important}
+body.has-bg-img .sb{background:rgba(var(--bg-rgb),.88)!important;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+body.has-bg-img .topbar{background:rgba(var(--bg-rgb),.82)!important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+body.has-bg-img .card{background:rgba(var(--s1-rgb),.82)!important;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+body.has-bg-img .modal{background:rgba(var(--s1-rgb),.92)!important;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+body.has-bg-img .fi,body.has-bg-img .linput,body.has-bg-img .ucard{background:rgba(var(--s2-rgb),.72)!important}
+body.has-bg-img .ov{background:rgba(0,0,0,.72)}
+body.has-bg-img #lp .lbox{background:rgba(var(--s1-rgb),.9)!important;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.theme-sw{width:48px;height:48px;border-radius:10px;cursor:pointer;border:3px solid transparent;overflow:hidden;display:flex;flex-direction:column;transition:border-color .18s,box-shadow .18s}
+.theme-sw:hover{transform:scale(1.08);box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.sw-item{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -294,6 +310,79 @@ const GET=p=>api(p);
 const POST=(p,d)=>api(p,{method:'POST',body:JSON.stringify(d)});
 const PUT=(p,d)=>api(p,{method:'PUT',body:JSON.stringify(d)});
 const DEL=p=>api(p,{method:'DELETE'});
+
+// ── APPEARANCE ────────────────────────────────────────────────
+const THEMES={
+  'dark-blue':{name:'深海蓝',bg:'#0f172a',pri:'#3b82f6',vars:{'--bg':'#0f172a','--bg-rgb':'15,23,42','--s1':'#1e293b','--s1-rgb':'30,41,59','--s2':'#273348','--s2-rgb':'39,51,72','--s3':'#1a2744','--border':'#334155','--border2':'#2d3f5a','--pri':'#3b82f6','--pri2':'#1d4ed8','--acc':'#06b6d4','--ok':'#10b981','--warn':'#f59e0b','--err':'#ef4444','--tx':'#f1f5f9','--tx2':'#94a3b8','--tx3':'#64748b','--row-hover':'rgba(30,41,59,.4)','--login-g1':'#0f3460','--login-g2':'#0c2a4a'}},
+  'ocean':{name:'深邃海洋',bg:'#0a1628',pri:'#0ea5e9',vars:{'--bg':'#0a1628','--bg-rgb':'10,22,40','--s1':'#112236','--s1-rgb':'17,34,54','--s2':'#1a3050','--s2-rgb':'26,48,80','--s3':'#0e1e3a','--border':'#1e3a5f','--border2':'#1a3352','--pri':'#0ea5e9','--pri2':'#0284c7','--acc':'#22d3ee','--ok':'#10b981','--warn':'#f59e0b','--err':'#ef4444','--tx':'#e0f2fe','--tx2':'#7dd3fc','--tx3':'#0369a1','--row-hover':'rgba(17,34,54,.5)','--login-g1':'#061624','--login-g2':'#0a1e38'}},
+  'forest':{name:'森林夜晚',bg:'#0a1a0e',pri:'#10b981',vars:{'--bg':'#0a1a0e','--bg-rgb':'10,26,14','--s1':'#132518','--s1-rgb':'19,37,24','--s2':'#1a3022','--s2-rgb':'26,48,34','--s3':'#0f1f12','--border':'#2d5a36','--border2':'#234d2b','--pri':'#10b981','--pri2':'#059669','--acc':'#34d399','--ok':'#34d399','--warn':'#f59e0b','--err':'#ef4444','--tx':'#ecfdf5','--tx2':'#6ee7b7','--tx3':'#065f46','--row-hover':'rgba(19,37,24,.5)','--login-g1':'#061a08','--login-g2':'#0a1f0d'}},
+  'purple':{name:'紫色黄昏',bg:'#130a2a',pri:'#a855f7',vars:{'--bg':'#130a2a','--bg-rgb':'19,10,42','--s1':'#1e1040','--s1-rgb':'30,16,64','--s2':'#271852','--s2-rgb':'39,24,82','--s3':'#170d36','--border':'#4c3080','--border2':'#3d2468','--pri':'#a855f7','--pri2':'#7c3aed','--acc':'#e879f9','--ok':'#10b981','--warn':'#f59e0b','--err':'#f87171','--tx':'#f3e8ff','--tx2':'#c084fc','--tx3':'#7c3aed','--row-hover':'rgba(30,16,64,.5)','--login-g1':'#0d0620','--login-g2':'#160930'}},
+  'warm':{name:'暖色夜晚',bg:'#1a0e08',pri:'#f97316',vars:{'--bg':'#1a0e08','--bg-rgb':'26,14,8','--s1':'#2a1a0e','--s1-rgb':'42,26,14','--s2':'#35221a','--s2-rgb':'53,34,26','--s3':'#22140a','--border':'#6b3a25','--border2':'#5a2f1e','--pri':'#f97316','--pri2':'#ea580c','--acc':'#fbbf24','--ok':'#10b981','--warn':'#fbbf24','--err':'#ef4444','--tx':'#fff7ed','--tx2':'#fdba74','--tx3':'#c2410c','--row-hover':'rgba(42,26,14,.5)','--login-g1':'#3d1506','--login-g2':'#2a0f04'}},
+  'slate':{name:'暮色灰调',bg:'#111827',pri:'#6366f1',vars:{'--bg':'#111827','--bg-rgb':'17,24,39','--s1':'#1f2937','--s1-rgb':'31,41,55','--s2':'#2d3748','--s2-rgb':'45,55,72','--s3':'#1a2234','--border':'#374151','--border2':'#2d3a4e','--pri':'#6366f1','--pri2':'#4f46e5','--acc':'#818cf8','--ok':'#10b981','--warn':'#f59e0b','--err':'#ef4444','--tx':'#f9fafb','--tx2':'#9ca3af','--tx3':'#6b7280','--row-hover':'rgba(31,41,55,.5)','--login-g1':'#1a1f3a','--login-g2':'#0d1025'}},
+  'rose':{name:'玫瑰夜色',bg:'#1a0810',pri:'#f43f5e',vars:{'--bg':'#1a0810','--bg-rgb':'26,8,16','--s1':'#2a1018','--s1-rgb':'42,16,24','--s2':'#361820','--s2-rgb':'54,24,32','--s3':'#220c12','--border':'#7f1d2f','--border2':'#6b1625','--pri':'#f43f5e','--pri2':'#e11d48','--acc':'#fb7185','--ok':'#10b981','--warn':'#f59e0b','--err':'#fb7185','--tx':'#fff1f2','--tx2':'#fda4af','--tx3':'#be123c','--row-hover':'rgba(42,16,24,.5)','--login-g1':'#3d0515','--login-g2':'#2a040f'}},
+  'light':{name:'清新白昼',bg:'#f0f4f8',pri:'#3b82f6',vars:{'--bg':'#f0f4f8','--bg-rgb':'240,244,248','--s1':'#ffffff','--s1-rgb':'255,255,255','--s2':'#f1f5f9','--s2-rgb':'241,245,249','--s3':'#e2e8f0','--border':'#cbd5e1','--border2':'#e2e8f0','--pri':'#3b82f6','--pri2':'#1d4ed8','--acc':'#06b6d4','--ok':'#059669','--warn':'#d97706','--err':'#dc2626','--tx':'#0f172a','--tx2':'#475569','--tx3':'#94a3b8','--row-hover':'rgba(15,23,42,.05)','--login-g1':'#dbeafe','--login-g2':'#e0f2fe'}}
+};
+function applyTheme(id){
+  const t=THEMES[id]||THEMES['dark-blue'];
+  const root=document.documentElement;
+  Object.entries(t.vars).forEach(([k,v])=>root.style.setProperty(k,v));
+  localStorage.setItem('tm_theme',id);
+  document.querySelectorAll('.sw-item').forEach(el=>{
+    const a=el.dataset.theme===id;
+    const sw=el.querySelector('.theme-sw');
+    if(sw){sw.style.borderColor=a?'var(--pri)':'transparent';sw.style.boxShadow=a?'0 0 0 3px rgba(59,130,246,.3)':'none';}
+    const lbl=el.querySelector('span');
+    if(lbl) lbl.style.color=a?'var(--pri)':'var(--tx3)';
+  });
+}
+function applyBgImage(dataUrl){
+  if(dataUrl){
+    document.body.style.backgroundImage='url('+dataUrl+')';
+    document.body.classList.add('has-bg-img');
+    localStorage.setItem('tm_bg_img',dataUrl);
+  } else {
+    document.body.style.backgroundImage='';
+    document.body.classList.remove('has-bg-img');
+    localStorage.removeItem('tm_bg_img');
+  }
+}
+function clearBgImage(){
+  applyBgImage(null);
+  const wrap=document.getElementById('bg-preview-wrap');
+  if(wrap){wrap.style.display='none';}
+  const empty=document.getElementById('bg-no-img');
+  if(empty) empty.style.display='block';
+  toast('背景图已清除');
+}
+function handleBgUpload(e){
+  const file=e.target.files[0];
+  if(!file) return;
+  if(file.size>8*1024*1024){toast('图片大小请控制在8MB以内','err');return;}
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      applyBgImage(ev.target.result);
+      const wrap=document.getElementById('bg-preview-wrap');
+      if(wrap){
+        const img=wrap.querySelector('img');
+        if(img) img.src=ev.target.result;
+        wrap.style.display='block';
+      }
+      const empty=document.getElementById('bg-no-img');
+      if(empty) empty.style.display='none';
+      toast('背景图已设置');
+    }catch(ex){toast('图片太大，无法保存到本地','err');}
+  };
+  reader.readAsDataURL(file);
+}
+function initAppearance(){
+  const tid=localStorage.getItem('tm_theme')||'dark-blue';
+  const t=THEMES[tid]||THEMES['dark-blue'];
+  const root=document.documentElement;
+  Object.entries(t.vars).forEach(([k,v])=>root.style.setProperty(k,v));
+  const img=localStorage.getItem('tm_bg_img');
+  if(img){document.body.style.backgroundImage='url('+img+')';document.body.classList.add('has-bg-img');}
+}
 
 function toast(msg,type='ok'){
   const el=document.createElement('div');
@@ -1613,8 +1702,10 @@ async function loadRpt(){
 // ════════════════════════════════════════════
 function renderProfile(){
   document.getElementById('tb-title').textContent='个人设置';
+  const hasBg=!!localStorage.getItem('tm_bg_img');
+  const curTheme=localStorage.getItem('tm_theme')||'dark-blue';
   document.getElementById('ct').innerHTML=`
-  <div style="max-width:480px">
+  <div style="max-width:540px">
     <div class="card">
       <div class="card-hd"><div class="ctitle">👤 我的信息</div></div>
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
@@ -1637,7 +1728,47 @@ function renderProfile(){
       <div class="fgroup"><label class="flabel">确认新密码</label><input id="pf-npw2" class="fi" type="password"></div>
       <button class="btn btn-pri" onclick="changePw()">修改密码</button>
     </div>
+    <div class="card">
+      <div class="card-hd"><div class="ctitle">🎨 外观主题</div></div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:11px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">配色方案</div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px">
+          ${Object.entries(THEMES).map(([id,t])=>`<div class="sw-item" data-theme="${id}" onclick="applyTheme('${id}')" style="display:flex;flex-direction:column;align-items:center;gap:5px">
+            <div class="theme-sw" data-theme="${id}">
+              <div style="flex:2;background:${t.bg}"></div>
+              <div style="flex:1;background:${t.pri}"></div>
+            </div>
+            <span style="font-size:10px">${t.name}</span>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">自定义背景图</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <label class="btn" style="cursor:pointer">🖼️ 上传背景图<input type="file" accept="image/*" style="display:none" onchange="handleBgUpload(event)"></label>
+          <button class="btn btn-ghost" onclick="clearBgImage()">清除背景</button>
+        </div>
+        <div id="bg-preview-wrap" style="display:${hasBg?'block':'none'}">
+          <img style="max-width:240px;max-height:110px;border-radius:8px;border:1px solid var(--border);object-fit:cover;display:block">
+          <div style="font-size:11px;color:var(--tx3);margin-top:5px">已设置自定义背景图（存储于本地）</div>
+        </div>
+        <div id="bg-no-img" style="display:${hasBg?'none':'block'};font-size:12px;color:var(--tx3)">暂未设置背景图，支持 JPG / PNG / WebP，建议使用大尺寸图片（≥1920×1080）</div>
+      </div>
+    </div>
   </div>`;
+  // mark active theme
+  document.querySelectorAll('.sw-item').forEach(el=>{
+    const a=el.dataset.theme===curTheme;
+    const sw=el.querySelector('.theme-sw');
+    if(sw){sw.style.borderColor=a?'var(--pri)':'transparent';sw.style.boxShadow=a?'0 0 0 3px rgba(59,130,246,.3)':'none';}
+    const lbl=el.querySelector('span');
+    if(lbl) lbl.style.color=a?'var(--pri)':'var(--tx3)';
+  });
+  // set bg preview image src (avoid embedding data in template)
+  if(hasBg){
+    const img=document.querySelector('#bg-preview-wrap img');
+    if(img) img.src=localStorage.getItem('tm_bg_img');
+  }
 }
 async function saveProfile(){
   const res=await PUT('/members/'+ME.id,{name:ME.name,username:ME.username,role:ME.role,
@@ -2277,7 +2408,7 @@ async function showMonLog(date,taskId){
     ()=>closeModal());
 }
 
-checkAuth();function renderHelp(){
+initAppearance();checkAuth();function renderHelp(){
   document.getElementById('tb-title').textContent='\u64cd\u4f5c\u8bf4\u660e';
   var isAdm=ME.is_admin&&VIEW_MODE==='admin';
 
