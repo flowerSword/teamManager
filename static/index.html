@@ -1157,12 +1157,11 @@ async function loadTaskTable(isAdmin, page){
 async function openTaskModal(id){
   const members=await GET('/members/active')||[];
   let t={task_type:taskTab,status:'PENDING',priority:'MEDIUM',group_name:ME.group_name};
-  if(id){const all=await GET('/tasks?type='+taskTab)||[];t=all.find(x=>x.id===id)||t;
-         if(!t.id){const mine=await GET('/tasks/mine?type='+taskTab)||[];t=mine.find(x=>x.id===id)||t;}}
+  if(id){t=await GET('/tasks/'+id)||t;}
   const memOpts=members.filter(m=>!m.is_admin).map(m=>`<option value="${m.id}" ${t.assignee_id==m.id?'selected':''}>${esc(m.name)}</option>`).join('');
-  const isIssue=taskTab==='ISSUE', isOnsite=taskTab==='ONSITE';
+  const isIssue=t.task_type==='ISSUE', isOnsite=t.task_type==='ONSITE';
   const statuses=isIssue?['OPEN','IN_PROGRESS','RESOLVED','CLOSED','REJECTED']:
-                 (taskTab==='REQUIREMENT'?['PENDING','IN_PROGRESS','TESTING','DELIVERED','CANCELLED']:
+                 (t.task_type==='REQUIREMENT'?['PENDING','IN_PROGRESS','TESTING','DELIVERED','CANCELLED']:
                   ['PENDING','ONGOING','COMPLETED','CANCELLED']);
 
   openModal(id?'编辑任务':'新建任务',`
@@ -1171,25 +1170,32 @@ async function openTaskModal(id){
     <input id="tf-title" class="fi" value="${esc(t.title||'')}" required></div>
   <div class="fgroup"><label class="flabel">描述</label>
     <textarea id="tf-desc" class="fi">${esc(t.description||'')}</textarea></div>
+  <div class="fgroup"><label class="flabel">任务类型</label>
+    <select id="tf-type" class="fi" onchange="updateTaskFormType(this.value)">
+      <option value="REQUIREMENT"${t.task_type==='REQUIREMENT'?' selected':''}>需求</option>
+      <option value="ISSUE"${t.task_type==='ISSUE'?' selected':''}>问题单</option>
+      <option value="ONSITE"${t.task_type==='ONSITE'?' selected':''}>现场支撑</option>
+      <option value="OTHER"${t.task_type==='OTHER'?' selected':''}>其他事务</option>
+    </select></div>
   <div class="frow c3">
     <div class="fgroup"><label class="flabel">状态</label>
       <select id="tf-status" class="fi">${statuses.map(s=>`<option value="${s}"${t.status===s?' selected':''}>${SZ[s]||s}</option>`).join('')}</select></div>
     <div class="fgroup"><label class="flabel">优先级</label>
       <select id="tf-pri" class="fi">${['LOW','MEDIUM','HIGH','CRITICAL'].map(p=>`<option${t.priority===p?' selected':''}>${p}</option>`).join('')}</select></div>
-    ${isIssue?`<div class="fgroup"><label class="flabel">严重度</label>
+    <div id="tf-sev-prog-wrap">${isIssue?`<div class="fgroup"><label class="flabel">严重度</label>
       <select id="tf-sev" class="fi">${['LOW','MEDIUM','HIGH','CRITICAL'].map(s=>`<option${t.severity===s?' selected':''}>${s}</option>`).join('')}</select></div>`
     :`<div class="fgroup"><label class="flabel">进度(%)</label>
-      <input id="tf-prog" class="fi" type="number" min="0" max="100" value="${t.progress||0}"></div>`}
+      <input id="tf-prog" class="fi" type="number" min="0" max="100" value="${t.progress||0}"></div>`}</div>
   </div>
   <div class="frow c2">
     <div class="fgroup"><label class="flabel">负责人（默认为自己）</label>
       <select id="tf-aid" class="fi" onchange="document.getElementById('tf-an').value=this.options[this.selectedIndex].text">
         <option value="">请选择</option>${memOpts}
       </select></div>
-    ${isOnsite?`<div class="fgroup"><label class="flabel">现场地点</label>
+    <div id="tf-loc-dm-wrap">${isOnsite?`<div class="fgroup"><label class="flabel">现场地点</label>
       <input id="tf-loc" class="fi" value="${esc(t.location||'')}"></div>`
     :`<div class="fgroup"><label class="flabel">交付月份</label>
-      <input id="tf-dm" class="fi" type="month" value="${t.delivery_month||''}"></div>`}
+      <input id="tf-dm" class="fi" type="month" value="${t.delivery_month||''}"></div>`}</div>
   </div>
   <div class="frow c3">
     <div class="fgroup"><label class="flabel">计划开始 <span class="req">*</span></label><input id="tf-psd" class="fi" type="date" value="${t.plan_start_date||''}"></div>
@@ -1208,7 +1214,6 @@ async function openTaskModal(id){
   </div>
   <input id="tf-an" type="hidden" value="${esc(t.assignee_name||'')}">
   <input id="tf-gn" type="hidden" value="${esc(t.group_name||ME.group_name)}">
-  <input id="tf-type" type="hidden" value="${taskTab}">
   </form>`,async()=>{
     const title=gv('tf-title');
     if(!title){toast('标题必填','err');return;}
@@ -1233,6 +1238,23 @@ async function openTaskModal(id){
     if(res){toast(id?'更新成功':'创建成功');closeModal();
       ME.is_admin?loadTaskTable(true):loadTaskTable(false);}
   },true);
+}
+
+function updateTaskFormType(type){
+  const isIssue=type==='ISSUE', isOnsite=type==='ONSITE';
+  const statuses=isIssue?['OPEN','IN_PROGRESS','RESOLVED','CLOSED','REJECTED']:
+    (type==='REQUIREMENT'?['PENDING','IN_PROGRESS','TESTING','DELIVERED','CANCELLED']:
+     ['PENDING','ONGOING','COMPLETED','CANCELLED']);
+  const sel=document.getElementById('tf-status');
+  if(sel){const cur=sel.value;sel.innerHTML=statuses.map(s=>`<option value="${s}"${cur===s?' selected':''}>${SZ[s]||s}</option>`).join('');}
+  const sp=document.getElementById('tf-sev-prog-wrap');
+  if(sp) sp.innerHTML=isIssue?
+    `<div class="fgroup"><label class="flabel">严重度</label><select id="tf-sev" class="fi"><option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div>`:
+    `<div class="fgroup"><label class="flabel">进度(%)</label><input id="tf-prog" class="fi" type="number" min="0" max="100" value="0"></div>`;
+  const ld=document.getElementById('tf-loc-dm-wrap');
+  if(ld) ld.innerHTML=isOnsite?
+    `<div class="fgroup"><label class="flabel">现场地点</label><input id="tf-loc" class="fi" value=""></div>`:
+    `<div class="fgroup"><label class="flabel">交付月份</label><input id="tf-dm" class="fi" type="month" value=""></div>`;
 }
 
 async function delTask(id){
