@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS task_logs (
     member_id INTEGER NOT NULL, member_name TEXT,
     log_date TEXT NOT NULL, content TEXT NOT NULL,
     progress_snapshot INTEGER, status_snapshot TEXT,
+    hours REAL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS system_config (
@@ -122,6 +123,10 @@ CREATE INDEX IF NOT EXISTS idx_lm ON task_logs(member_id);
     # Migration: add ip_address to check_ins
     try:
         db.execute("ALTER TABLE check_ins ADD COLUMN ip_address TEXT")
+        db.commit()
+    except: pass
+    try:
+        db.execute("ALTER TABLE task_logs ADD COLUMN hours REAL DEFAULT 0")
         db.commit()
     except: pass
     try:
@@ -762,16 +767,18 @@ def add_log(tid):
     if not content: return jsonify({'error':'进展内容不能为空'}),400
     log_date=d.get('log_date',today())
     new_prog=d.get('progress'); new_stat=d.get('status')
+    try: hours=max(0.0,float(d.get('hours') or 0))
+    except (TypeError,ValueError): hours=0.0
     if new_prog is not None or new_stat is not None:
         upd=[]; prm=[]
         if new_prog is not None: upd.append("progress=?"); prm.append(int(new_prog))
         if new_stat is not None: upd.append("status=?"); prm.append(new_stat)
         upd.append("updated_at=?"); prm.append(now_str()); prm.append(tid)
         db.execute("UPDATE tasks SET {} WHERE id=?".format(','.join(upd)),prm)
-    c=db.execute("INSERT INTO task_logs(task_id,member_id,member_name,log_date,content,progress_snapshot,status_snapshot) VALUES(?,?,?,?,?,?,?)",
+    c=db.execute("INSERT INTO task_logs(task_id,member_id,member_name,log_date,content,progress_snapshot,status_snapshot,hours) VALUES(?,?,?,?,?,?,?,?)",
         (tid,u['id'],u['name'],log_date,content,
          new_prog if new_prog is not None else existing.get('progress'),
-         new_stat or existing.get('status')))
+         new_stat or existing.get('status'),hours))
     db.commit()
     return jsonify(r2d(db.execute("SELECT * FROM task_logs WHERE id=?",(c.lastrowid,)).fetchone())),201
 
@@ -854,6 +861,79 @@ def delivery_stats():
     # Sort by on_time_rate desc, then delivered desc
     results.sort(key=lambda x: (-x['onTimeRate'], -x['delivered']))
     return jsonify({'members': results, 'top3': results[:3]})
+
+@app.route('/api/stats/timelog')
+@login_required
+def timelog_stats():
+    """
+    Per-member time allocation: hours spent per task, per task type, per day.
+    Non-admins are locked to their own data; admins may pass any member_id.
+    """
+    u = current_user()
+    member_id = request.args.get('member_id', type=int)
+    if not u['is_admin']:
+        member_id = u['id']
+    if not member_id:
+        return jsonify({'error':'member_id 不能为空'}), 400
+
+    db = get_db()
+    member = r2d(db.execute("SELECT id,name FROM members WHERE id=?", (member_id,)).fetchone())
+    if not member: return jsonify({'error':'成员不存在'}), 404
+
+    start = request.args.get('startMonth', '')
+    end   = request.args.get('endMonth', '') or start
+
+    q = """SELECT l.task_id,l.log_date,l.hours,t.title as task_title,t.task_type
+           FROM task_logs l JOIN tasks t ON l.task_id=t.id WHERE l.member_id=?"""
+    params = [member_id]
+    if start: q += " AND l.log_date>=?"; params.append(start+'-01')
+    if end:
+        import calendar
+        ey, em = map(int, end.split('-'))
+        q += " AND l.log_date<=?"; params.append("{}-{:02d}".format(end, calendar.monthrange(ey,em)[1]))
+    rows = rs(db.execute(q, params).fetchall())
+
+    by_task = {}
+    by_type = {}
+    by_date = {}
+    total_hours = 0.0
+    for r in rows:
+        h = r.get('hours') or 0.0
+        total_hours += h
+        tid = r['task_id']
+        if tid not in by_task:
+            by_task[tid] = {'taskId': tid, 'title': r['task_title'], 'taskType': r['task_type'], 'hours': 0.0, 'logCount': 0}
+        by_task[tid]['hours'] += h
+        by_task[tid]['logCount'] += 1
+        by_type[r['task_type']] = by_type.get(r['task_type'], 0.0) + h
+        by_date[r['log_date']] = by_date.get(r['log_date'], 0.0) + h
+
+    task_list = sorted(by_task.values(), key=lambda x: -x['hours'])
+    for t in task_list: t['hours'] = round(t['hours'], 2)
+    by_type = {k: round(v, 2) for k, v in by_type.items()}
+    by_date = {k: round(v, 2) for k, v in by_date.items()}
+
+    total_wd = 0
+    if start:
+        import calendar
+        sy, sm = map(int, start.split('-'))
+        ey, em = map(int, end.split('-'))
+        y, m = sy, sm
+        while (y, m) <= (ey, em):
+            total_wd += workdays(y, m)
+            m += 1
+            if m > 12: m = 1; y += 1
+
+    return jsonify({
+        'memberId': member_id, 'memberName': member['name'],
+        'startMonth': start, 'endMonth': end,
+        'totalHours': round(total_hours, 2),
+        'totalWorkDays': total_wd,
+        'avgHoursPerWorkday': round(total_hours/total_wd, 2) if total_wd else 0,
+        'byTask': task_list,
+        'byType': by_type,
+        'byDate': by_date,
+    })
 
 # ── Export ────────────────────────────────────────────────────
 def mkhdr(ws,row,hdrs,wds):
