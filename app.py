@@ -555,7 +555,10 @@ def ci_annual(gn):
     if not u['is_admin'] and u['group_name']!=gn: return jsonify({'error':'无权限'}),403
     yr=int(request.args.get('year',datetime.date.today().year))
     db=get_db()
-    members=rs(db.execute("SELECT * FROM members WHERE group_name=? AND is_active=1",(gn,)).fetchall())
+    if u['is_admin']:
+        members=rs(db.execute("SELECT * FROM members WHERE group_name=? AND is_active=1",(gn,)).fetchall())
+    else:
+        members=rs(db.execute("SELECT * FROM members WHERE id=? AND is_active=1",(u['id'],)).fetchall())
     monthly=[]
     for mo in range(1,13):
         s="{}-{:02d}-01".format(yr,mo); e="{}-{:02d}-{:02d}".format(yr,mo,calendar.monthrange(yr,mo)[1])
@@ -803,6 +806,7 @@ def delivery_stats():
     """
     u = current_user()
     gn = request.args.get('group_name', u.get('group_name',''))
+    if not u['is_admin'] and u['group_name']!=gn: return jsonify({'error':'无权限'}),403
     start = request.args.get('startMonth', '')
     end   = request.args.get('endMonth', '')
     member_ids_param = request.args.get('member_ids', '')  # "1,2,3" or ""
@@ -821,9 +825,10 @@ def delivery_stats():
 
     tasks = rs(db.execute(f"SELECT * FROM tasks WHERE {base}", params).fetchall())
 
-    # Filter by member_ids if provided
-    selected_mids = set()
-    if member_ids_param:
+    # Non-admins are always locked to their own data; admins may filter by member_ids
+    if not u['is_admin']:
+        tasks = [t for t in tasks if t.get('assignee_id') == u['id']]
+    elif member_ids_param:
         selected_mids = set(int(x) for x in member_ids_param.split(',') if x.strip().isdigit())
         tasks = [t for t in tasks if t.get('assignee_id') in selected_mids]
 
