@@ -608,6 +608,16 @@ function openModal(title,body,onSave,wide=false){
 }
 function closeModal(){document.getElementById('mw').innerHTML='';_modalSave=null;}
 
+// ── Generic multi-select dropdown (used by list filters) ──────
+function toggleDropdown(id){
+  document.querySelectorAll('.ms-dd-panel').forEach(p=>{if(p.id!==id)p.style.display='none';});
+  const el=document.getElementById(id);
+  if(el) el.style.display=el.style.display==='block'?'none':'block';
+}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.ms-dd')) document.querySelectorAll('.ms-dd-panel').forEach(p=>p.style.display='none');
+});
+
 // ════════════════════════════════════════════
 // ADMIN DASHBOARD
 // ════════════════════════════════════════════
@@ -1060,7 +1070,7 @@ async function exportCi(){
 // ════════════════════════════════════════════
 // TASK LIST (共用，admin全组，member自己的)
 // ════════════════════════════════════════════
-let taskTab='REQUIREMENT', taskPage=1, taskFilter=[], taskDmFilter='';
+let taskTab='REQUIREMENT', taskPage=1, taskFilter=[], taskDmFilter='', taskNoFilter='', taskAllCache=[];
 async function renderMyTasks(){
   document.getElementById('tb-title').textContent='我的任务';
   renderTaskList(false);
@@ -1088,6 +1098,7 @@ function renderTaskList(isAdmin){
     <div class="fbar" style="flex-wrap:wrap;align-items:center;gap:10px">
       <div id="task-status-filter" style="display:flex;gap:6px;flex-wrap:wrap"></div>
       <div id="task-dm-filter"></div>
+      <div id="task-no-filter"></div>
       <span style="color:var(--tx3);font-size:13px" id="task-count"></span>
     </div>
     <div id="task-table">加载中...</div>
@@ -1104,24 +1115,50 @@ async function loadTaskTable(isAdmin, page){
     if(match) btn.classList.toggle('active', match[1]===taskTab);
   });
   const endpoint=isAdmin?`/tasks?type=${taskTab}`:`/tasks/mine?type=${taskTab}`;
-  const all=await GET(endpoint)||[];
+  taskAllCache=await GET(endpoint)||[];
+  taskFilter=taskFilter.filter(s=>taskStatusesFor(taskTab).includes(s));
+  renderTaskFilterBar(isAdmin);
+  renderTaskRows(isAdmin);
+}
+
+function renderTaskFilterBar(isAdmin){
   const statusOpts=taskStatusesFor(taskTab);
-  taskFilter=taskFilter.filter(s=>statusOpts.includes(s));
   const sfEl=document.getElementById('task-status-filter');
   if(sfEl){
-    sfEl.innerHTML=statusOpts.map(s=>
-      `<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--s2)">
-        <input type="checkbox" value="${s}" ${taskFilter.includes(s)?'checked':''} onchange="toggleTaskStatusFilter('${s}',this.checked,${isAdmin})" style="accent-color:var(--pri)"> ${SZ[s]||s}</label>`
-    ).join('');
+    const wasOpen=document.getElementById('task-status-dd')?.style.display==='block';
+    const label=taskFilter.length?`已选${taskFilter.length}项`:'全部状态';
+    sfEl.innerHTML=`<div class="ms-dd" style="position:relative;display:inline-block">
+      <button type="button" class="btn btn-sm" style="min-width:130px;text-align:left" onclick="toggleDropdown('task-status-dd')">状态：${label} ▾</button>
+      <div id="task-status-dd" class="ms-dd-panel" style="display:${wasOpen?'block':'none'};position:absolute;top:100%;left:0;margin-top:4px;z-index:20;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px;min-width:170px;max-height:260px;overflow:auto;box-shadow:0 4px 16px rgba(0,0,0,.25)">
+        ${statusOpts.map(s=>
+          `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:4px 4px">
+            <input type="checkbox" value="${s}" ${taskFilter.includes(s)?'checked':''} onchange="toggleTaskStatusFilter('${s}',this.checked,${isAdmin})" style="accent-color:var(--pri)"> ${SZ[s]||s}</label>`
+        ).join('')}
+        <div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+          <button type="button" class="btn btn-sm" onclick="taskFilter=[];taskPage=1;renderTaskFilterBar(${isAdmin});renderTaskRows(${isAdmin})">清空</button>
+          <button type="button" class="btn btn-sm" onclick="document.getElementById('task-status-dd').style.display='none'">完成</button>
+        </div>
+      </div>
+    </div>`;
   }
   const dmEl=document.getElementById('task-dm-filter');
   if(dmEl){
     dmEl.innerHTML=taskTab==='ONSITE'?'':
-      `<input class="fi" type="month" style="width:130px" value="${taskDmFilter}" onchange="taskDmFilter=this.value;loadTaskTable(${isAdmin})" title="按交付月份筛选">`;
+      `<input class="fi" type="month" style="width:130px" value="${taskDmFilter}" onchange="taskDmFilter=this.value;taskPage=1;renderTaskRows(${isAdmin})" title="按交付月份筛选">`;
   }
+  const noEl=document.getElementById('task-no-filter');
+  if(noEl){
+    noEl.innerHTML=(taskTab==='REQUIREMENT'||taskTab==='ISSUE')?
+      `<input class="fi" style="width:160px" value="${esc(taskNoFilter)}" placeholder="按${taskTab==='ISSUE'?'问题单号':'需求单号'}搜索" oninput="taskNoFilter=this.value;taskPage=1;renderTaskRows(${isAdmin})">`:'';
+  }
+}
+
+function renderTaskRows(isAdmin){
+  const all=taskAllCache;
   const filtered=all.filter(t=>
     (!taskFilter.length||taskFilter.includes(t.status)) &&
-    (taskTab==='ONSITE'||!taskDmFilter||t.delivery_month===taskDmFilter));
+    (taskTab==='ONSITE'||!taskDmFilter||t.delivery_month===taskDmFilter) &&
+    (!taskNoFilter||(t.requirement_no||'').toLowerCase().includes(taskNoFilter.toLowerCase())||(t.issue_no||'').toLowerCase().includes(taskNoFilter.toLowerCase())));
   const ct=document.getElementById('task-count');
   if(ct)ct.textContent=`共 ${filtered.length} 条`;
   const statsEl=document.getElementById('task-stats');
@@ -1135,8 +1172,8 @@ async function loadTaskTable(isAdmin, page){
   }
   const {rows,page:p,pages}=paginate(filtered,taskPage);
   let cols='';
-  if(taskTab==='REQUIREMENT') cols=`<th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
-  else if(taskTab==='ISSUE') cols=`<th>严重度</th><th>负责人</th><th>状态</th><th>计划解决</th><th>超期</th>`;
+  if(taskTab==='REQUIREMENT') cols=`<th>需求单号</th><th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
+  else if(taskTab==='ISSUE') cols=`<th>问题单号</th><th>严重度</th><th>负责人</th><th>状态</th><th>计划解决</th><th>超期</th>`;
   else if(taskTab==='ONSITE') cols=`<th>地点</th><th>负责人</th><th>状态</th><th>开始</th><th>结束</th>`;
   else cols=`<th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th>`;
   document.getElementById('task-table').innerHTML=`
@@ -1144,12 +1181,12 @@ async function loadTaskTable(isAdmin, page){
   ${rows.map(t=>{
     const isMe=t.assignee_id===ME.id||t.created_by===ME.id;
     let cells='';
-    if(taskTab==='REQUIREMENT') cells=`<td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
+    if(taskTab==='REQUIREMENT') cells=`<td>${esc(t.requirement_no||'-')}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
       <td style="min-width:80px"><div class="prog"><div class="pf" style="width:${t.progress||0}%;background:${t.has_risk?'var(--err)':'var(--pri)'}"></div></div><small style="color:var(--tx3)">${t.progress||0}%</small></td>
       <td style="color:${t.plan_end_date&&t.plan_end_date<today()&&t.status!=='DELIVERED'?'var(--err)':'inherit'}">${t.plan_end_date||'-'}</td>
       <td>${t.delivery_month||'-'}</td>
       <td>${t.has_risk&&!['DELIVERED','CANCELLED'].includes(t.status)?`<span style="color:var(--warn);font-size:11px">⚠ ${esc((t.risk_description||'').slice(0,12))}</span>`:'<span style="color:var(--tx3)">正常</span>'}`;
-    else if(taskTab==='ISSUE') cells=`<td><span class="bd ${SEV[t.severity]||'bd-gray'}">${t.severity||''}</span></td>
+    else if(taskTab==='ISSUE') cells=`<td>${esc(t.issue_no||'-')}</td><td><span class="bd ${SEV[t.severity]||'bd-gray'}">${t.severity||''}</span></td>
       <td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
       <td style="color:${t.plan_end_date&&t.plan_end_date<today()&&!['RESOLVED','CLOSED'].includes(t.status)?'var(--err)':'inherit'}">${t.plan_end_date||'-'}</td>
       <td>${t.plan_end_date&&t.plan_end_date<today()&&!['RESOLVED','CLOSED','REJECTED'].includes(t.status)?'<span class="bd bd-red">超期</span>':''}`;
@@ -1168,13 +1205,21 @@ async function loadTaskTable(isAdmin, page){
       </td>
     </tr>`;
   }).join('')||'<tr><td colspan="8" class="empty">暂无任务，点击"新建任务"开始</td></tr>'}
-  </tbody></table>${pgr(p,pages,`(function(pg){taskPage=pg;loadTaskTable(${isAdmin})})`)}`;
+  </tbody></table>${pgr(p,pages,`(function(pg){taskPage=pg;renderTaskRows(${isAdmin})})`)}`;
 }
 
 function toggleTaskStatusFilter(status, checked, isAdmin){
   if(checked){ if(!taskFilter.includes(status)) taskFilter.push(status); }
   else { taskFilter=taskFilter.filter(s=>s!==status); }
-  taskPage=1; loadTaskTable(isAdmin);
+  taskPage=1; renderTaskFilterBar(isAdmin); renderTaskRows(isAdmin);
+}
+
+function taskNoFieldHtml(type,t){
+  if(type==='REQUIREMENT') return `<div class="fgroup"><label class="flabel">需求单号</label>
+    <input id="tf-rno" class="fi" value="${esc(t.requirement_no||'')}" placeholder="关联的需求单号"></div>`;
+  if(type==='ISSUE') return `<div class="fgroup"><label class="flabel">问题单号</label>
+    <input id="tf-ino" class="fi" value="${esc(t.issue_no||'')}" placeholder="关联的问题单号"></div>`;
+  return '';
 }
 
 // ════════════════════════════════════════════
@@ -1201,6 +1246,7 @@ async function openTaskModal(id){
       <option value="ONSITE"${t.task_type==='ONSITE'?' selected':''}>现场支撑</option>
       <option value="OTHER"${t.task_type==='OTHER'?' selected':''}>其他事务</option>
     </select></div>
+  <div id="tf-no-wrap">${taskNoFieldHtml(t.task_type,t)}</div>
   <div class="frow c3">
     <div class="fgroup"><label class="flabel">状态</label>
       <select id="tf-status" class="fi">${statuses.map(s=>`<option value="${s}"${t.status===s?' selected':''}>${SZ[s]||s}</option>`).join('')}</select></div>
@@ -1258,6 +1304,7 @@ async function openTaskModal(id){
       has_risk:parseInt(gv('tf-risk'))||0,risk_description:gv('tf-rdesc'),
       module:gv('tf-mod'),version:gv('tf-ver'),
       group_name:gv('tf-gn')||ME.group_name,
+      requirement_no:gv('tf-rno')||null,issue_no:gv('tf-ino')||null,
     };
     const res=id?await PUT('/tasks/'+id,payload):await POST('/tasks',payload);
     if(res){toast(id?'更新成功':'创建成功');closeModal();
@@ -1278,6 +1325,8 @@ function updateTaskFormType(type){
   if(ld) ld.innerHTML=isOnsite?
     `<div class="fgroup"><label class="flabel">现场地点</label><input id="tf-loc" class="fi" value=""></div>`:
     `<div class="fgroup"><label class="flabel">交付月份</label><input id="tf-dm" class="fi" type="month" value=""></div>`;
+  const nw=document.getElementById('tf-no-wrap');
+  if(nw) nw.innerHTML=taskNoFieldHtml(type,{});
 }
 
 async function delTask(id){
@@ -2513,20 +2562,61 @@ function renderDpGrid(){
   if(!grid) return;
   if(!dpSlots.length){grid.innerHTML='<div class="empty">当天暂无计划，选择模板后点击"应用模板"生成时间段，或点击"添加时间段"手动新增</div>';return;}
   grid.innerHTML=`<table><thead><tr><th style="width:210px">时间段</th><th>内容</th><th style="width:180px">关联任务</th><th style="width:60px"></th></tr></thead><tbody>
-  ${dpSlots.map((s,i)=>`<tr>
+  ${dpSlots.map((s,i)=>{
+    const st=dpMyTasksCache.find(t=>String(t.id)===String(s.task_id));
+    return `<tr>
     <td><input class="fi" type="time" style="width:90px;display:inline-block" value="${s.start_time||''}" onchange="dpSlots[${i}].start_time=this.value">
       ~ <input class="fi" type="time" style="width:90px;display:inline-block" value="${s.end_time||''}" onchange="dpSlots[${i}].end_time=this.value"></td>
     <td><input class="fi" value="${esc(s.content||'')}" onchange="dpSlots[${i}].content=this.value" placeholder="这个时间段做什么"></td>
-    <td><select class="fi" onchange="dpSlots[${i}].task_id=this.value||null">
-      <option value="">不关联</option>${dpMyTasksCache.map(t=>`<option value="${t.id}" ${String(s.task_id)===String(t.id)?'selected':''}>${esc(t.title)}</option>`).join('')}
-    </select></td>
+    <td><button type="button" class="btn btn-sm" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block" title="${esc(st?st.title:'')}" onclick="openDpTaskPicker(${i})">${st?esc(st.title):'不关联'}</button></td>
     <td><button class="btn btn-sm btn-err" onclick="removeDpSlot(${i})">删</button></td>
-  </tr>`).join('')}
+  </tr>`;
+  }).join('')}
   </tbody></table>`;
 }
 
 function addDpSlot(){ dpSlots.push({start_time:'',end_time:'',content:'',task_id:''}); renderDpGrid(); }
 function removeDpSlot(i){ dpSlots.splice(i,1); renderDpGrid(); }
+
+// ── 关联任务选择器（支持按状态/交付月份/标题关键字搜索）──────
+let dpPickIdx=null, dpPickStatus='', dpPickMonth='', dpPickKw='';
+function openDpTaskPicker(i){
+  dpPickIdx=i; dpPickStatus=''; dpPickMonth=''; dpPickKw='';
+  const statusOpts=[...new Set(dpMyTasksCache.map(t=>t.status))];
+  const body=`<div class="frow c3" style="margin-bottom:8px">
+    <div class="fgroup"><label class="flabel">状态</label>
+      <select id="dpp-status" class="fi" onchange="dpPickStatus=this.value;renderDpPickList()">
+        <option value="">全部状态</option>${statusOpts.map(s=>`<option value="${s}">${SZ[s]||s}</option>`).join('')}
+      </select></div>
+    <div class="fgroup"><label class="flabel">交付月份</label>
+      <input id="dpp-month" class="fi" type="month" onchange="dpPickMonth=this.value;renderDpPickList()"></div>
+    <div class="fgroup"><label class="flabel">标题关键字</label>
+      <input id="dpp-kw" class="fi" placeholder="模糊搜索标题" oninput="dpPickKw=this.value;renderDpPickList()"></div>
+  </div>
+  <div style="margin-bottom:8px"><button type="button" class="btn btn-sm" onclick="selectDpTask(null)">✕ 清除关联</button></div>
+  <div id="dpp-list" style="max-height:320px;overflow:auto"></div>`;
+  openModal('选择关联任务',body,closeModal,true);
+  renderDpPickList();
+}
+function renderDpPickList(){
+  const el=document.getElementById('dpp-list');
+  if(!el) return;
+  const kw=dpPickKw.trim().toLowerCase();
+  const list=dpMyTasksCache.filter(t=>
+    (!dpPickStatus||t.status===dpPickStatus) &&
+    (!dpPickMonth||t.delivery_month===dpPickMonth) &&
+    (!kw||(t.title||'').toLowerCase().includes(kw)));
+  el.innerHTML=list.length?list.map(t=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--border);cursor:pointer" onclick="selectDpTask(${t.id})">
+    <span>${tbadge(t.task_type)} ${esc(t.title)}</span>
+    <span style="display:flex;gap:6px;align-items:center;flex-shrink:0">${sbadge(t.status)}<small style="color:var(--tx3)">${t.delivery_month||''}</small></span>
+  </div>`).join(''):'<div class="empty">无匹配任务</div>';
+}
+function selectDpTask(tid){
+  if(dpPickIdx==null) return;
+  dpSlots[dpPickIdx].task_id=tid||'';
+  closeModal();
+  renderDpGrid();
+}
 
 async function applyDpTemplate(){
   if(!dpSelectedTemplate){toast('请先选择模板','err');return;}

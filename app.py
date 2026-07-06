@@ -149,6 +149,14 @@ CREATE INDEX IF NOT EXISTS idx_dps ON daily_plan_slots(daily_plan_id);
         db.execute("ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER")
         db.commit()
     except: pass
+    try:
+        db.execute("ALTER TABLE tasks ADD COLUMN requirement_no TEXT")
+        db.commit()
+    except: pass
+    try:
+        db.execute("ALTER TABLE tasks ADD COLUMN issue_no TEXT")
+        db.commit()
+    except: pass
     # Migration: add ip_address to check_ins
     try:
         db.execute("ALTER TABLE check_ins ADD COLUMN ip_address TEXT")
@@ -180,7 +188,42 @@ CREATE INDEX IF NOT EXISTS idx_dps ON daily_plan_slots(daily_plan_id);
         db.execute("INSERT OR IGNORE INTO system_config(key,value) VALUES('late_threshold','09:00')")
         db.commit()
     except: pass
+    # Migration: seed built-in daily-plan templates (once) for members who have none yet
+    try:
+        seeded = db.execute("SELECT value FROM system_config WHERE key='seeded_default_plan_templates'").fetchone()
+        if not seeded:
+            rows = db.execute("SELECT id FROM members WHERE id NOT IN (SELECT DISTINCT member_id FROM plan_templates)").fetchall()
+            for row in rows:
+                seed_default_plan_templates(db, row[0])
+            db.execute("INSERT OR IGNORE INTO system_config(key,value) VALUES('seeded_default_plan_templates','1')")
+            db.commit()
+    except: pass
     db.close()
+
+# 8:00-24:00 built-in schedules, with lunch break 12:30-14:00 and dinner break 17:30-19:00
+DEFAULT_PLAN_TEMPLATES = [
+    ('标准日程（1小时制）', [
+        ('08:00','09:00','工作'), ('09:00','10:00','工作'), ('10:00','11:00','工作'),
+        ('11:00','12:00','工作'), ('12:00','12:30','工作'), ('12:30','14:00','午休'),
+        ('14:00','15:00','工作'), ('15:00','16:00','工作'), ('16:00','17:00','工作'),
+        ('17:00','17:30','工作'), ('17:30','19:00','晚休'),
+        ('19:00','20:00','工作'), ('20:00','21:00','工作'), ('21:00','22:00','工作'),
+        ('22:00','23:00','工作'), ('23:00','24:00','工作'),
+    ]),
+    ('标准日程（2小时制）', [
+        ('08:00','10:00','工作'), ('10:00','12:00','工作'), ('12:00','12:30','工作'),
+        ('12:30','14:00','午休'), ('14:00','16:00','工作'), ('16:00','17:30','工作'),
+        ('17:30','19:00','晚休'), ('19:00','21:00','工作'), ('21:00','23:00','工作'),
+        ('23:00','24:00','工作'),
+    ]),
+]
+
+def seed_default_plan_templates(db, member_id):
+    for name, slots in DEFAULT_PLAN_TEMPLATES:
+        tid = db.execute("INSERT INTO plan_templates(member_id,name) VALUES(?,?)",(member_id,name)).lastrowid
+        for i,(st,et,content) in enumerate(slots):
+            db.execute("INSERT INTO plan_template_slots(template_id,start_time,end_time,default_content,sort_order) VALUES(?,?,?,?,?)",
+                (tid,st,et,content,i))
 
 def r2d(r): return dict(r) if r else None
 def rs(rows): return [dict(r) for r in rows]
@@ -342,6 +385,7 @@ def add_member():
     c=db.execute("INSERT INTO members(name,username,password,email,phone,role,group_name,is_admin,is_active) VALUES(?,?,?,?,?,?,?,?,?)",
         (d['name'],d['username'],pw_store,d.get('email'),d.get('phone'),
          d.get('role','DEVELOPER'),d.get('group_name'),1 if d.get('is_admin') else 0,1 if d.get('is_active',True) else 0))
+    seed_default_plan_templates(db, c.lastrowid)
     db.commit()
     row=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active FROM members WHERE id=?",(c.lastrowid,)).fetchone()
     return jsonify(r2d(row)),201
@@ -725,14 +769,16 @@ def add_task():
     d=auto_risk(d); db=get_db()
     c=db.execute("""INSERT INTO tasks(title,description,task_type,status,priority,severity,issue_type,
         assignee_id,assignee_name,reporter_name,group_name,plan_start_date,plan_end_date,actual_end_date,
-        delivery_month,progress,has_risk,risk_description,version,module,location,estimated_days,parent_task_id,created_by)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        delivery_month,progress,has_risk,risk_description,version,module,location,estimated_days,parent_task_id,
+        requirement_no,issue_no,created_by)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (d.get('title'),d.get('description'),d.get('task_type','REQUIREMENT'),
          d.get('status','PENDING'),d.get('priority','MEDIUM'),d.get('severity'),d.get('issue_type'),
          d.get('assignee_id'),d.get('assignee_name'),d.get('reporter_name'),d.get('group_name'),
          d.get('plan_start_date'),d.get('plan_end_date'),d.get('actual_end_date'),
          d.get('delivery_month'),d.get('progress',0),d.get('has_risk',0),d.get('risk_description'),
-         d.get('version'),d.get('module'),d.get('location'),int(d.get('estimated_days') or 0),d.get('parent_task_id'),d.get('created_by')))
+         d.get('version'),d.get('module'),d.get('location'),int(d.get('estimated_days') or 0),d.get('parent_task_id'),
+         d.get('requirement_no'),d.get('issue_no'),d.get('created_by')))
     db.commit()
     return jsonify(r2d(db.execute("SELECT * FROM tasks WHERE id=?",(c.lastrowid,)).fetchone())),201
 
@@ -762,7 +808,8 @@ def upd_task(tid):
     d=auto_risk(d); db.execute("""UPDATE tasks SET title=?,description=?,task_type=?,status=?,priority=?,
         severity=?,issue_type=?,assignee_id=?,assignee_name=?,reporter_name=?,plan_start_date=?,
         plan_end_date=?,actual_end_date=?,delivery_month=?,progress=?,has_risk=?,risk_description=?,
-        version=?,module=?,location=?,estimated_days=?,parent_task_id=?,updated_at=? WHERE id=?""",
+        version=?,module=?,location=?,estimated_days=?,parent_task_id=?,requirement_no=?,issue_no=?,
+        updated_at=? WHERE id=?""",
         (keep('title'),d.get('description'),keep('task_type'),
          keep('status'),keep('priority'),d.get('severity'),d.get('issue_type'),
          keep('assignee_id'),keep('assignee_name'),d.get('reporter_name'),
@@ -771,7 +818,7 @@ def upd_task(tid):
          d.get('has_risk',0),d.get('risk_description'),
          d.get('version'),d.get('module'),d.get('location'),
          int(d.get('estimated_days') or existing.get('estimated_days') or 0),
-         keep('parent_task_id'),now_str(),tid))
+         keep('parent_task_id'),d.get('requirement_no'),d.get('issue_no'),now_str(),tid))
     db.commit()
     return jsonify(r2d(db.execute("SELECT * FROM tasks WHERE id=?",(tid,)).fetchone()))
 
