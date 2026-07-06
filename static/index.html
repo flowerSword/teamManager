@@ -407,6 +407,11 @@ const SC={PENDING:'bd-gray',IN_PROGRESS:'bd-blue',TESTING:'bd-amber',DELIVERED:'
 const TZ={REQUIREMENT:'需求',ISSUE:'问题单',ONSITE:'现场支撑',OTHER:'其他事务'};
 const TC={REQUIREMENT:'bd-blue',ISSUE:'bd-red',ONSITE:'bd-teal',OTHER:'bd-purple'};
 const SEV={LOW:'bd-gray',MEDIUM:'bd-blue',HIGH:'bd-amber',CRITICAL:'bd-red'};
+function taskStatusesFor(type){
+  return type==='ISSUE'?['OPEN','IN_PROGRESS','RESOLVED','CLOSED','REJECTED']:
+    (type==='REQUIREMENT'?['PENDING','IN_PROGRESS','TESTING','DELIVERED','CANCELLED']:
+     ['PENDING','ONGOING','COMPLETED','CANCELLED']);
+}
 const PRI={LOW:'bd-gray',MEDIUM:'bd-blue',HIGH:'bd-amber',CRITICAL:'bd-red'};
 
 function sbadge(s){return`<span class="bd ${SC[s]||'bd-gray'}">${SZ[s]||s}</span>`}
@@ -539,13 +544,15 @@ function buildNav(){
     {k:'dash',l:'总览',i:'dash'},{k:'ci',l:'签到管理',i:'ci'},
     {k:'tasks',l:'任务管理',i:'task'},{k:'member-view',l:'成员视图',i:'team'},
     {k:'admin-gantt',l:'甘特图',i:'gantt'},{k:'monthly',l:'月度日历',i:'task'},
+    {k:'day-plan',l:'每日计划',i:'task'},
     {k:'team',l:'成员管理',i:'team'},{k:'reports',l:'报表中心',i:'rpt'},
     {k:'help',l:'操作说明',i:'rpt'}
   ];
   var memberMenus=[
     {k:'dash',l:'我的工作台',i:'dash'},{k:'my-ci',l:'我的签到',i:'ci'},
     {k:'my-tasks',l:'我的任务',i:'task'},{k:'gantt',l:'甘特图',i:'gantt'},
-    {k:'monthly',l:'月度日历',i:'task'},{k:'team-view',l:'团队视图',i:'team'},
+    {k:'monthly',l:'月度日历',i:'task'},{k:'day-plan',l:'每日计划',i:'task'},
+    {k:'team-view',l:'团队视图',i:'team'},
     {k:'reports',l:'报表中心',i:'rpt'},{k:'help',l:'操作说明',i:'rpt'}
   ];
   var isAdminView=ME.is_admin&&VIEW_MODE==='admin';
@@ -575,10 +582,11 @@ function showPage(name){
   var isAdminView=ME.is_admin&&VIEW_MODE==='admin';
   var map=isAdminView?{
     dash:renderAdminDash,ci:renderCi,tasks:renderTasks,team:renderTeam,reports:renderReports,
-    profile:renderProfile,'member-view':renderMemberView,'admin-gantt':renderAdminGantt,monthly:renderMonthly,help:renderHelp
+    profile:renderProfile,'member-view':renderMemberView,'admin-gantt':renderAdminGantt,monthly:renderMonthly,
+    'day-plan':renderDayPlan,help:renderHelp
   }:{
     dash:renderMemberDash,'my-ci':renderMyCi,'my-tasks':renderMyTasks,gantt:renderGantt,
-    'team-view':renderTeamView,profile:renderProfile,monthly:renderMonthly,help:renderHelp,
+    'team-view':renderTeamView,profile:renderProfile,monthly:renderMonthly,'day-plan':renderDayPlan,help:renderHelp,
     reports:renderReports
   };
   (map[name]||(isAdminView?renderAdminDash:renderMemberDash))();
@@ -1052,7 +1060,7 @@ async function exportCi(){
 // ════════════════════════════════════════════
 // TASK LIST (共用，admin全组，member自己的)
 // ════════════════════════════════════════════
-let taskTab='REQUIREMENT', taskPage=1, taskFilter='';
+let taskTab='REQUIREMENT', taskPage=1, taskFilter=[], taskDmFilter='';
 async function renderMyTasks(){
   document.getElementById('tb-title').textContent='我的任务';
   renderTaskList(false);
@@ -1077,14 +1085,9 @@ function renderTaskList(isAdmin){
   </div>
   <div id="task-stats" class="sgrid" style="grid-template-columns:repeat(4,1fr)"></div>
   <div class="card">
-    <div class="fbar">
-      <select class="fi" style="width:120px" id="task-sf" onchange="taskPage=1;taskFilter=this.value;loadTaskTable(${isAdmin})">
-        <option value="">全部状态</option>
-        <option value="PENDING">待处理</option><option value="IN_PROGRESS">进行中</option>
-        <option value="ONGOING">进行中</option><option value="TESTING">测试中</option>
-        <option value="DELIVERED">已交付</option><option value="COMPLETED">已完成</option>
-        <option value="RESOLVED">已解决</option>
-      </select>
+    <div class="fbar" style="flex-wrap:wrap;align-items:center;gap:10px">
+      <div id="task-status-filter" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <div id="task-dm-filter"></div>
       <span style="color:var(--tx3);font-size:13px" id="task-count"></span>
     </div>
     <div id="task-table">加载中...</div>
@@ -1102,7 +1105,23 @@ async function loadTaskTable(isAdmin, page){
   });
   const endpoint=isAdmin?`/tasks?type=${taskTab}`:`/tasks/mine?type=${taskTab}`;
   const all=await GET(endpoint)||[];
-  const filtered=taskFilter?all.filter(t=>t.status===taskFilter):all;
+  const statusOpts=taskStatusesFor(taskTab);
+  taskFilter=taskFilter.filter(s=>statusOpts.includes(s));
+  const sfEl=document.getElementById('task-status-filter');
+  if(sfEl){
+    sfEl.innerHTML=statusOpts.map(s=>
+      `<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--s2)">
+        <input type="checkbox" value="${s}" ${taskFilter.includes(s)?'checked':''} onchange="toggleTaskStatusFilter('${s}',this.checked,${isAdmin})" style="accent-color:var(--pri)"> ${SZ[s]||s}</label>`
+    ).join('');
+  }
+  const dmEl=document.getElementById('task-dm-filter');
+  if(dmEl){
+    dmEl.innerHTML=taskTab==='ONSITE'?'':
+      `<input class="fi" type="month" style="width:130px" value="${taskDmFilter}" onchange="taskDmFilter=this.value;loadTaskTable(${isAdmin})" title="按交付月份筛选">`;
+  }
+  const filtered=all.filter(t=>
+    (!taskFilter.length||taskFilter.includes(t.status)) &&
+    (taskTab==='ONSITE'||!taskDmFilter||t.delivery_month===taskDmFilter));
   const ct=document.getElementById('task-count');
   if(ct)ct.textContent=`共 ${filtered.length} 条`;
   const statsEl=document.getElementById('task-stats');
@@ -1152,6 +1171,12 @@ async function loadTaskTable(isAdmin, page){
   </tbody></table>${pgr(p,pages,`(function(pg){taskPage=pg;loadTaskTable(${isAdmin})})`)}`;
 }
 
+function toggleTaskStatusFilter(status, checked, isAdmin){
+  if(checked){ if(!taskFilter.includes(status)) taskFilter.push(status); }
+  else { taskFilter=taskFilter.filter(s=>s!==status); }
+  taskPage=1; loadTaskTable(isAdmin);
+}
+
 // ════════════════════════════════════════════
 // TASK MODAL
 // ════════════════════════════════════════════
@@ -1161,9 +1186,7 @@ async function openTaskModal(id){
   if(id){t=await GET('/tasks/'+id)||t;}
   const memOpts=members.filter(m=>!m.is_admin).map(m=>`<option value="${m.id}" ${t.assignee_id==m.id?'selected':''}>${esc(m.name)}</option>`).join('');
   const isIssue=t.task_type==='ISSUE', isOnsite=t.task_type==='ONSITE';
-  const statuses=isIssue?['OPEN','IN_PROGRESS','RESOLVED','CLOSED','REJECTED']:
-                 (t.task_type==='REQUIREMENT'?['PENDING','IN_PROGRESS','TESTING','DELIVERED','CANCELLED']:
-                  ['PENDING','ONGOING','COMPLETED','CANCELLED']);
+  const statuses=taskStatusesFor(t.task_type);
 
   openModal(id?'编辑任务':'新建任务',`
   <form id="tf">
@@ -1210,8 +1233,9 @@ async function openTaskModal(id){
   </div>
   <div class="frow c2">
     <div class="fgroup"><label class="flabel">风险</label>
-      <select id="tf-risk" class="fi"><option value="0" ${!t.has_risk?'selected':''}>无</option><option value="1" ${t.has_risk?'selected':''}>有风险</option></select></div>
-    <div class="fgroup"><label class="flabel">风险描述</label><input id="tf-rdesc" class="fi" value="${esc(t.risk_description||'')}"></div>
+      <select id="tf-risk" class="fi" onchange="var w=document.getElementById('tf-rdesc-wrap');var on=this.value==='1';w.style.display=on?'':'none';if(!on)document.getElementById('tf-rdesc').value='';">
+        <option value="0" ${!t.has_risk?'selected':''}>无风险</option><option value="1" ${t.has_risk?'selected':''}>有风险</option></select></div>
+    <div class="fgroup" id="tf-rdesc-wrap" style="display:${t.has_risk?'':'none'}"><label class="flabel">风险描述</label><input id="tf-rdesc" class="fi" value="${esc(t.risk_description||'')}"></div>
   </div>
   <input id="tf-an" type="hidden" value="${esc(t.assignee_name||'')}">
   <input id="tf-gn" type="hidden" value="${esc(t.group_name||ME.group_name)}">
@@ -1243,9 +1267,7 @@ async function openTaskModal(id){
 
 function updateTaskFormType(type){
   const isIssue=type==='ISSUE', isOnsite=type==='ONSITE';
-  const statuses=isIssue?['OPEN','IN_PROGRESS','RESOLVED','CLOSED','REJECTED']:
-    (type==='REQUIREMENT'?['PENDING','IN_PROGRESS','TESTING','DELIVERED','CANCELLED']:
-     ['PENDING','ONGOING','COMPLETED','CANCELLED']);
+  const statuses=taskStatusesFor(type);
   const sel=document.getElementById('tf-status');
   if(sel){const cur=sel.value;sel.innerHTML=statuses.map(s=>`<option value="${s}"${cur===s?' selected':''}>${SZ[s]||s}</option>`).join('');}
   const sp=document.getElementById('tf-sev-prog-wrap');
@@ -2438,6 +2460,156 @@ function showGanttTip(e,tid,title,logDates,logMapStr){
   document.body.appendChild(_tipEl);
 }
 function hideGanttTip(){if(_tipEl){_tipEl.remove();_tipEl=null;}}
+
+// ════════════════════════════════════════════
+// DAILY PLAN (每日计划)
+// ════════════════════════════════════════════
+let dpDate=today(), dpTemplates=[], dpSelectedTemplate='', dpSlots=[], dpMyTasksCache=[];
+let dpEditSlots=[], dpEditTplId=null;
+
+async function renderDayPlan(){
+  document.getElementById('tb-title').textContent='每日计划';
+  document.getElementById('ct').innerHTML=`
+  <div class="phd">
+    <div class="ptitle">🗓️ 每日计划</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap">
+      <button class="btn" onclick="openTemplateManager()">📋 管理模板</button>
+      <button class="btn btn-pri" onclick="saveDayPlan()">💾 保存</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="fbar" style="flex-wrap:wrap;align-items:center;gap:10px">
+      <input class="fi" type="date" style="width:150px" value="${dpDate}" onchange="dpDate=this.value;loadDpDay()">
+      <select class="fi" id="dp-tpl-sel" style="width:180px"></select>
+      <button class="btn btn-sm" onclick="applyDpTemplate()">应用模板</button>
+      <button class="btn btn-sm" onclick="addDpSlot()">＋ 添加时间段</button>
+    </div>
+    <div id="dp-grid">加载中...</div>
+  </div>`;
+  const [tpls,mytasks]=await Promise.all([GET('/plan/templates'),GET('/tasks/mine')]);
+  dpTemplates=tpls||[]; dpMyTasksCache=mytasks||[];
+  renderDpTemplateOptions();
+  await loadDpDay();
+}
+
+function renderDpTemplateOptions(){
+  const sel=document.getElementById('dp-tpl-sel');
+  if(!sel) return;
+  sel.innerHTML='<option value="">选择模板…</option>'+dpTemplates.map(t=>
+    `<option value="${t.id}" ${String(dpSelectedTemplate)===String(t.id)?'selected':''}>${esc(t.name)}</option>`).join('');
+  sel.onchange=function(){dpSelectedTemplate=this.value;};
+}
+
+async function loadDpDay(){
+  const grid=document.getElementById('dp-grid');
+  if(grid) grid.innerHTML='加载中...';
+  const res=await GET('/plan/day/'+dpDate)||{slots:[]};
+  dpSlots=(res.slots||[]).map(s=>({start_time:s.start_time,end_time:s.end_time,content:s.content||'',task_id:s.task_id||''}));
+  renderDpGrid();
+}
+
+function renderDpGrid(){
+  const grid=document.getElementById('dp-grid');
+  if(!grid) return;
+  if(!dpSlots.length){grid.innerHTML='<div class="empty">当天暂无计划，选择模板后点击"应用模板"生成时间段，或点击"添加时间段"手动新增</div>';return;}
+  grid.innerHTML=`<table><thead><tr><th style="width:210px">时间段</th><th>内容</th><th style="width:180px">关联任务</th><th style="width:60px"></th></tr></thead><tbody>
+  ${dpSlots.map((s,i)=>`<tr>
+    <td><input class="fi" type="time" style="width:90px;display:inline-block" value="${s.start_time||''}" onchange="dpSlots[${i}].start_time=this.value">
+      ~ <input class="fi" type="time" style="width:90px;display:inline-block" value="${s.end_time||''}" onchange="dpSlots[${i}].end_time=this.value"></td>
+    <td><input class="fi" value="${esc(s.content||'')}" onchange="dpSlots[${i}].content=this.value" placeholder="这个时间段做什么"></td>
+    <td><select class="fi" onchange="dpSlots[${i}].task_id=this.value||null">
+      <option value="">不关联</option>${dpMyTasksCache.map(t=>`<option value="${t.id}" ${String(s.task_id)===String(t.id)?'selected':''}>${esc(t.title)}</option>`).join('')}
+    </select></td>
+    <td><button class="btn btn-sm btn-err" onclick="removeDpSlot(${i})">删</button></td>
+  </tr>`).join('')}
+  </tbody></table>`;
+}
+
+function addDpSlot(){ dpSlots.push({start_time:'',end_time:'',content:'',task_id:''}); renderDpGrid(); }
+function removeDpSlot(i){ dpSlots.splice(i,1); renderDpGrid(); }
+
+async function applyDpTemplate(){
+  if(!dpSelectedTemplate){toast('请先选择模板','err');return;}
+  if(dpSlots.length && !confirm('应用模板将覆盖当天已填写的内容，确定继续？')) return;
+  const res=await POST('/plan/day/apply_template',{date:dpDate,template_id:parseInt(dpSelectedTemplate)});
+  if(res){
+    dpSlots=(res.slots||[]).map(s=>({start_time:s.start_time,end_time:s.end_time,content:s.content||'',task_id:s.task_id||''}));
+    renderDpGrid(); toast('已应用模板');
+  }
+}
+
+async function saveDayPlan(){
+  const slots=dpSlots.filter(s=>s.start_time&&s.end_time);
+  const res=await POST('/plan/day',{date:dpDate,slots});
+  if(res) toast('保存成功');
+}
+
+// ── 模板管理 ──────────────────────────────────
+function openTemplateManager(){
+  const body=`<div style="display:flex;flex-direction:column;gap:8px">
+    ${dpTemplates.map(t=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border:1px solid var(--border);border-radius:6px">
+      <span>${esc(t.name)} <small style="color:var(--tx3)">（${(t.slots||[]).length} 个时间段）</small></span>
+      <span style="display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="openTemplateEditor(${t.id})">编辑</button>
+        <button class="btn btn-sm btn-err" onclick="delPlanTemplate(${t.id})">删除</button>
+      </span>
+    </div>`).join('')||'<div class="empty">暂无模板</div>'}
+    <button class="btn btn-pri" style="margin-top:4px" onclick="openTemplateEditor(null)">＋ 新建模板</button>
+  </div>`;
+  openModal('我的计划模板',body,closeModal,true);
+}
+
+function openTemplateEditor(id){
+  const tpl=id?dpTemplates.find(t=>t.id===id):{name:'',slots:[]};
+  dpEditTplId=id;
+  dpEditSlots=(tpl.slots||[]).map(s=>({start_time:s.start_time,end_time:s.end_time,default_content:s.default_content||''}));
+  const body=`<div class="fgroup"><label class="flabel">模板名称</label><input id="tpl-name" class="fi" value="${esc(tpl.name||'')}"></div>
+  <div id="tpl-slots"></div>
+  <button class="btn btn-sm" onclick="addTplSlotRow()">＋ 添加时间段</button>`;
+  openModal(id?'编辑模板':'新建模板',body,saveTemplateEditor,true);
+  renderTplSlotRows();
+}
+
+function renderTplSlotRows(){
+  const el=document.getElementById('tpl-slots');
+  if(!el) return;
+  el.innerHTML=dpEditSlots.map((s,i)=>`<div class="frow c3" style="align-items:end">
+    <div class="fgroup"><label class="flabel">开始</label><input class="fi" type="time" value="${s.start_time||''}" onchange="dpEditSlots[${i}].start_time=this.value"></div>
+    <div class="fgroup"><label class="flabel">结束</label><input class="fi" type="time" value="${s.end_time||''}" onchange="dpEditSlots[${i}].end_time=this.value"></div>
+    <div class="fgroup"><label class="flabel">默认内容（可选）</label><div style="display:flex;gap:6px">
+      <input class="fi" value="${esc(s.default_content||'')}" onchange="dpEditSlots[${i}].default_content=this.value">
+      <button class="btn btn-sm btn-err" onclick="removeTplSlotRow(${i})">删</button>
+    </div></div>
+  </div>`).join('')||'<div class="empty">暂无时间段，点击下方按钮添加</div>';
+}
+
+function addTplSlotRow(){ dpEditSlots.push({start_time:'',end_time:'',default_content:''}); renderTplSlotRows(); }
+function removeTplSlotRow(i){ dpEditSlots.splice(i,1); renderTplSlotRows(); }
+
+async function saveTemplateEditor(){
+  const name=gv('tpl-name');
+  if(!name){toast('模板名称必填','err');return;}
+  const slots=dpEditSlots.filter(s=>s.start_time&&s.end_time);
+  if(!slots.length){toast('至少添加一个有效时间段','err');return;}
+  const payload={name,slots};
+  const res=dpEditTplId?await PUT('/plan/templates/'+dpEditTplId,payload):await POST('/plan/templates',payload);
+  if(res){
+    toast('保存成功');
+    dpTemplates=await GET('/plan/templates')||[];
+    renderDpTemplateOptions();
+    openTemplateManager();
+  }
+}
+
+async function delPlanTemplate(id){
+  if(!confirm('确认删除该模板？')) return;
+  await DEL('/plan/templates/'+id);
+  toast('已删除');
+  dpTemplates=await GET('/plan/templates')||[];
+  if(String(dpSelectedTemplate)===String(id)) dpSelectedTemplate='';
+  renderDpTemplateOptions();
+  openTemplateManager();
+}
 
 // ════════════════════════════════════════════
 // MONTHLY VIEW

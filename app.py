@@ -104,12 +104,41 @@ CREATE TABLE IF NOT EXISTS system_config (
     value TEXT NOT NULL,
     updated_at TEXT DEFAULT (datetime('now','localtime'))
 );
+CREATE TABLE IF NOT EXISTS plan_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id INTEGER NOT NULL REFERENCES members(id),
+    name TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS plan_template_slots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id INTEGER NOT NULL REFERENCES plan_templates(id) ON DELETE CASCADE,
+    start_time TEXT NOT NULL, end_time TEXT NOT NULL,
+    default_content TEXT, sort_order INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS daily_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id INTEGER NOT NULL REFERENCES members(id),
+    plan_date TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    UNIQUE(member_id, plan_date)
+);
+CREATE TABLE IF NOT EXISTS daily_plan_slots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    daily_plan_id INTEGER NOT NULL REFERENCES daily_plans(id) ON DELETE CASCADE,
+    start_time TEXT NOT NULL, end_time TEXT NOT NULL,
+    content TEXT, task_id INTEGER, sort_order INTEGER DEFAULT 0
+);
 CREATE INDEX IF NOT EXISTS idx_ci ON check_ins(member_id, check_date);
 CREATE INDEX IF NOT EXISTS idx_tg ON tasks(group_name);
 CREATE INDEX IF NOT EXISTS idx_ta ON tasks(assignee_id);
 CREATE INDEX IF NOT EXISTS idx_tt ON tasks(task_type);
 CREATE INDEX IF NOT EXISTS idx_lt ON task_logs(task_id);
 CREATE INDEX IF NOT EXISTS idx_lm ON task_logs(member_id);
+CREATE INDEX IF NOT EXISTS idx_pt ON plan_templates(member_id);
+CREATE INDEX IF NOT EXISTS idx_pts ON plan_template_slots(template_id);
+CREATE INDEX IF NOT EXISTS idx_dp ON daily_plans(member_id, plan_date);
+CREATE INDEX IF NOT EXISTS idx_dps ON daily_plan_slots(daily_plan_id);
 """)
     # Migration: add estimated_days if not exists
     try:
@@ -168,13 +197,17 @@ def auto_risk(d):
     if d.get('status') in done: return d
     t=today(); pe=d.get('plan_end_date') or ''; prog=int(d.get('progress',0) or 0)
     if pe and pe < t:
+        # 已超期：无论用户是否选择"无风险"，都强制标记
         d['has_risk']=1
         if not d.get('risk_description'): d['risk_description']='已超过计划截止日期'
-    elif pe:
-        warn=(datetime.date.today()+datetime.timedelta(days=7)).isoformat()
-        if pe<=warn and prog<80:
-            d['has_risk']=1
+    elif int(d.get('has_risk') or 0)==1:
+        # 用户手动选择"有风险"时才做临近截止的自动判断，阈值 1 天
+        warn=(datetime.date.today()+datetime.timedelta(days=1)).isoformat()
+        if pe and pe<=warn and prog<80:
             if not d.get('risk_description'): d['risk_description']='临近截止，进度不足80%'
+    else:
+        # 用户选择"无风险"且未超期：尊重选择，不涉及风险描述
+        d['risk_description']=None
     return d
 
 STATUS_ZH={'PENDING':'待处理','IN_PROGRESS':'进行中','TESTING':'测试中',
@@ -795,6 +828,110 @@ def my_logs():
         JOIN tasks t ON l.task_id=t.id WHERE l.member_id=? AND l.log_date>=?
         ORDER BY l.log_date DESC,l.id DESC LIMIT 50""",(u['id'],since)).fetchall()
     return jsonify(rs(rows))
+
+
+# ── Daily Plan (每日计划) ─────────────────────────────────────
+def _plan_template_row(db, tpl):
+    slots=rs(db.execute("SELECT * FROM plan_template_slots WHERE template_id=? ORDER BY sort_order,id",(tpl['id'],)).fetchall())
+    tpl['slots']=slots
+    return tpl
+
+@app.route('/api/plan/templates')
+@login_required
+def list_plan_templates():
+    u=current_user(); db=get_db()
+    rows=rs(db.execute("SELECT * FROM plan_templates WHERE member_id=? ORDER BY id",(u['id'],)).fetchall())
+    return jsonify([_plan_template_row(db,r) for r in rows])
+
+@app.route('/api/plan/templates', methods=['POST'])
+@login_required
+def add_plan_template():
+    u=current_user(); db=get_db(); d=request.json or {}
+    name=(d.get('name') or '').strip()
+    if not name: return jsonify({'error':'模板名称不能为空'}),400
+    c=db.execute("INSERT INTO plan_templates(member_id,name) VALUES(?,?)",(u['id'],name))
+    tid=c.lastrowid
+    for i,s in enumerate(d.get('slots') or []):
+        db.execute("INSERT INTO plan_template_slots(template_id,start_time,end_time,default_content,sort_order) VALUES(?,?,?,?,?)",
+            (tid,s.get('start_time'),s.get('end_time'),s.get('default_content'),i))
+    db.commit()
+    return jsonify(_plan_template_row(db,r2d(db.execute("SELECT * FROM plan_templates WHERE id=?",(tid,)).fetchone()))),201
+
+@app.route('/api/plan/templates/<int:tpl_id>', methods=['PUT'])
+@login_required
+def upd_plan_template(tpl_id):
+    u=current_user(); db=get_db()
+    existing=r2d(db.execute("SELECT * FROM plan_templates WHERE id=?",(tpl_id,)).fetchone())
+    if not existing: return ('',404)
+    if existing['member_id']!=u['id']: return jsonify({'error':'无权限'}),403
+    d=request.json or {}
+    name=(d.get('name') or '').strip()
+    if not name: return jsonify({'error':'模板名称不能为空'}),400
+    db.execute("UPDATE plan_templates SET name=? WHERE id=?",(name,tpl_id))
+    db.execute("DELETE FROM plan_template_slots WHERE template_id=?",(tpl_id,))
+    for i,s in enumerate(d.get('slots') or []):
+        db.execute("INSERT INTO plan_template_slots(template_id,start_time,end_time,default_content,sort_order) VALUES(?,?,?,?,?)",
+            (tpl_id,s.get('start_time'),s.get('end_time'),s.get('default_content'),i))
+    db.commit()
+    return jsonify(_plan_template_row(db,r2d(db.execute("SELECT * FROM plan_templates WHERE id=?",(tpl_id,)).fetchone())))
+
+@app.route('/api/plan/templates/<int:tpl_id>', methods=['DELETE'])
+@login_required
+def del_plan_template(tpl_id):
+    u=current_user(); db=get_db()
+    existing=r2d(db.execute("SELECT * FROM plan_templates WHERE id=?",(tpl_id,)).fetchone())
+    if not existing: return ('',404)
+    if existing['member_id']!=u['id']: return jsonify({'error':'无权限'}),403
+    db.execute("DELETE FROM plan_templates WHERE id=?",(tpl_id,)); db.commit()
+    return '',204
+
+def _get_daily_plan(db, member_id, plan_date):
+    plan=r2d(db.execute("SELECT * FROM daily_plans WHERE member_id=? AND plan_date=?",(member_id,plan_date)).fetchone())
+    if not plan: return {'date':plan_date,'slots':[]}
+    slots=rs(db.execute("SELECT * FROM daily_plan_slots WHERE daily_plan_id=? ORDER BY sort_order,id",(plan['id'],)).fetchall())
+    plan['date']=plan['plan_date']; plan['slots']=slots
+    return plan
+
+@app.route('/api/plan/day/<dt>')
+@login_required
+def get_daily_plan(dt):
+    u=current_user()
+    return jsonify(_get_daily_plan(get_db(),u['id'],dt))
+
+def _save_daily_plan_slots(db, member_id, plan_date, slots):
+    row=db.execute("SELECT id FROM daily_plans WHERE member_id=? AND plan_date=?",(member_id,plan_date)).fetchone()
+    if row:
+        plan_id=row['id']
+    else:
+        plan_id=db.execute("INSERT INTO daily_plans(member_id,plan_date) VALUES(?,?)",(member_id,plan_date)).lastrowid
+    db.execute("DELETE FROM daily_plan_slots WHERE daily_plan_id=?",(plan_id,))
+    for i,s in enumerate(slots or []):
+        db.execute("INSERT INTO daily_plan_slots(daily_plan_id,start_time,end_time,content,task_id,sort_order) VALUES(?,?,?,?,?,?)",
+            (plan_id,s.get('start_time'),s.get('end_time'),s.get('content'),s.get('task_id') or None,i))
+    db.commit()
+    return plan_id
+
+@app.route('/api/plan/day', methods=['POST'])
+@login_required
+def save_daily_plan():
+    u=current_user(); db=get_db(); d=request.json or {}
+    plan_date=d.get('date')
+    if not plan_date: return jsonify({'error':'日期不能为空'}),400
+    _save_daily_plan_slots(db,u['id'],plan_date,d.get('slots'))
+    return jsonify(_get_daily_plan(db,u['id'],plan_date))
+
+@app.route('/api/plan/day/apply_template', methods=['POST'])
+@login_required
+def apply_plan_template():
+    u=current_user(); db=get_db(); d=request.json or {}
+    plan_date=d.get('date'); tpl_id=d.get('template_id')
+    if not plan_date or not tpl_id: return jsonify({'error':'参数缺失'}),400
+    tpl=r2d(db.execute("SELECT * FROM plan_templates WHERE id=?",(tpl_id,)).fetchone())
+    if not tpl or tpl['member_id']!=u['id']: return jsonify({'error':'无权限'}),403
+    tpl_slots=rs(db.execute("SELECT * FROM plan_template_slots WHERE template_id=? ORDER BY sort_order,id",(tpl_id,)).fetchall())
+    slots=[{'start_time':s['start_time'],'end_time':s['end_time'],'content':s.get('default_content'),'task_id':None} for s in tpl_slots]
+    _save_daily_plan_slots(db,u['id'],plan_date,slots)
+    return jsonify(_get_daily_plan(db,u['id'],plan_date))
 
 @app.route('/api/stats/delivery')
 @login_required
