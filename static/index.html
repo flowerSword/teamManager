@@ -665,8 +665,10 @@ async function renderAdminDash(){
 async function renderMemberDash(){
   document.getElementById('tb-title').textContent='我的工作台';
   document.getElementById('ct').innerHTML='<div style="color:var(--tx2);padding:60px;text-align:center">加载中...</div>';
-  const [myTasks,ciToday,recentLogs,todayTodos]=await Promise.all([GET('/tasks/mine'),GET('/checkin/today'),GET('/tasks/logs/mine?days=3'),GET('/tasks/today_todo')]);
+  const [myTasks,ciToday,recentLogs,todayTodos,todayPlan]=await Promise.all([GET('/tasks/mine'),GET('/checkin/today'),GET('/tasks/logs/mine?days=3'),GET('/tasks/today_todo'),GET('/plan/day/'+today())]);
   const tasks=myTasks||[], logs=recentLogs||[];
+  const planSlots=(todayPlan&&todayPlan.slots)||[];
+  const nowHM=new Date().toTimeString().slice(0,5);
   const active=tasks.filter(t=>!['DELIVERED','COMPLETED','RESOLVED','CLOSED','CANCELLED','REJECTED'].includes(t.status));
   const risk=tasks.filter(t=>t.has_risk&&!['DELIVERED','COMPLETED','RESOLVED','CLOSED','CANCELLED'].includes(t.status));
   const ci=ciToday;
@@ -694,6 +696,22 @@ async function renderMemberDash(){
         <button class="btn btn-pri" style="flex:1;min-width:90px;justify-content:center;padding:10px" onclick="quickCI('${s}')">${l}</button>`).join('')}
     </div>
   </div>`:''}
+  <div class="card">
+    <div class="card-hd"><div class="ctitle">🗓️ 今日计划</div>
+      <button class="btn btn-sm" onclick="showPage('day-plan')">查看/编辑</button>
+    </div>
+    ${planSlots.length?`<div style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow:auto">
+      ${planSlots.map(s=>{
+        const isNow=s.start_time&&s.end_time&&nowHM>=s.start_time&&nowHM<s.end_time;
+        const t=tasks.find(x=>String(x.id)===String(s.task_id));
+        return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;${isNow?'background:rgba(59,130,246,.15);border:1px solid var(--pri)':'border:1px solid transparent'}">
+          <span style="font-size:12px;min-width:96px;font-weight:${isNow?'700':'400'};color:${isNow?'var(--pri)':'var(--tx3)'}">${s.start_time||''}~${s.end_time||''}</span>
+          <span style="font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.content||'')}</span>
+          ${t?`<span class="bd bd-blue" style="flex-shrink:0;font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title)}</span>`:''}
+        </div>`;
+      }).join('')}
+    </div>`:'<div class="empty">今天还没有制定计划<br><small>点击"查看/编辑"前往每日计划页面</small></div>'}
+  </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
     <div class="card">
       <div class="card-hd"><div class="ctitle">📋 进行中任务</div>
@@ -2522,6 +2540,7 @@ async function renderDayPlan(){
   <div class="phd">
     <div class="ptitle">🗓️ 每日计划</div>
     <div style="display:flex;gap:7px;flex-wrap:wrap">
+      <button class="btn" onclick="openDpHistory()">📜 历史计划</button>
       <button class="btn" onclick="openTemplateManager()">📋 管理模板</button>
       <button class="btn btn-pri" onclick="saveDayPlan()">💾 保存</button>
     </div>
@@ -2634,6 +2653,42 @@ async function saveDayPlan(){
   if(res) toast('保存成功');
 }
 
+// ── 历史每日计划预览 ──────────────────────────
+let dpHistMonth=today().slice(0,7);
+function openDpHistory(){
+  const body=`<div class="fgroup"><label class="flabel">月份</label>
+    <input id="dph-month" class="fi" type="month" style="max-width:180px" value="${dpHistMonth}" onchange="dpHistMonth=this.value;loadDpHistoryList()"></div>
+  <div id="dph-list" style="max-height:360px;overflow:auto;margin-top:8px"></div>`;
+  openModal('📜 历史每日计划',body,closeModal,true);
+  loadDpHistoryList();
+}
+async function loadDpHistoryList(){
+  const el=document.getElementById('dph-list');
+  if(!el) return;
+  el.innerHTML='加载中...';
+  const list=await GET('/plan/history?month='+dpHistMonth)||[];
+  el.innerHTML=list.length?list.map(d=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid var(--border);cursor:pointer" onclick="previewDpDate('${d.plan_date}')">
+    <span>${d.plan_date}${d.plan_date===today()?' <span class="tag-me">今天</span>':''}</span>
+    <span style="color:var(--tx3);font-size:12px">${d.slot_count} 个时间段 ›</span>
+  </div>`).join(''):'<div class="empty">该月暂无历史计划记录</div>';
+}
+async function previewDpDate(dt){
+  const res=await GET('/plan/day/'+dt)||{slots:[]};
+  const slots=res.slots||[];
+  const body=`<button class="btn btn-sm" style="margin-bottom:10px" onclick="openDpHistory()">← 返回列表</button>
+  ${slots.length?`<div style="display:flex;flex-direction:column;gap:8px">
+    ${slots.map(s=>{
+      const t=dpMyTasksCache.find(x=>String(x.id)===String(s.task_id));
+      return `<div style="display:flex;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;align-items:center">
+        <div style="font-weight:700;min-width:100px;color:var(--pri)">${s.start_time||''}~${s.end_time||''}</div>
+        <div style="flex:1">${esc(s.content||'')}</div>
+        ${t?`<span class="bd bd-blue" style="flex-shrink:0">${esc(t.title)}</span>`:''}
+      </div>`;
+    }).join('')}
+  </div>`:'<div class="empty">当天暂无计划记录</div>'}`;
+  openModal('📅 '+dt+' 计划预览',body,closeModal,true);
+}
+
 // ── 模板管理 ──────────────────────────────────
 function openTemplateManager(){
   const body=`<div style="display:flex;flex-direction:column;gap:8px">
@@ -2653,10 +2708,23 @@ function openTemplateEditor(id){
   const tpl=id?dpTemplates.find(t=>t.id===id):{name:'',slots:[]};
   dpEditTplId=id;
   dpEditSlots=(tpl.slots||[]).map(s=>({start_time:s.start_time,end_time:s.end_time,default_content:s.default_content||''}));
-  const body=`<div class="fgroup"><label class="flabel">模板名称</label><input id="tpl-name" class="fi" value="${esc(tpl.name||'')}"></div>
+  const copyHtml=(!id&&dpTemplates.length)?`<div class="fgroup"><label class="flabel">从已有模板复制（可选，可复制后再修改）</label>
+    <select id="tpl-copy-src" class="fi" onchange="copyTplFromExisting(this.value)">
+      <option value="">不复制，从空白开始</option>
+      ${dpTemplates.map(t=>`<option value="${t.id}">${esc(t.name)}（${(t.slots||[]).length} 个时间段）</option>`).join('')}
+    </select></div>`:'';
+  const body=`${copyHtml}<div class="fgroup"><label class="flabel">模板名称</label><input id="tpl-name" class="fi" value="${esc(tpl.name||'')}"></div>
   <div id="tpl-slots"></div>
   <button class="btn btn-sm" onclick="addTplSlotRow()">＋ 添加时间段</button>`;
   openModal(id?'编辑模板':'新建模板',body,saveTemplateEditor,true);
+  renderTplSlotRows();
+}
+
+function copyTplFromExisting(srcId){
+  const src=dpTemplates.find(t=>String(t.id)===String(srcId));
+  dpEditSlots=src?(src.slots||[]).map(s=>({start_time:s.start_time,end_time:s.end_time,default_content:s.default_content||''})):[];
+  const nameInput=document.getElementById('tpl-name');
+  if(nameInput&&src&&!nameInput.value) nameInput.value=src.name+' 副本';
   renderTplSlotRows();
 }
 

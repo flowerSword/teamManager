@@ -945,6 +945,17 @@ def get_daily_plan(dt):
     u=current_user()
     return jsonify(_get_daily_plan(get_db(),u['id'],dt))
 
+@app.route('/api/plan/history')
+@login_required
+def plan_history():
+    u=current_user(); db=get_db()
+    month=request.args.get('month') or today()[:7]
+    rows=db.execute("""SELECT dp.plan_date as plan_date, COUNT(s.id) as slot_count
+        FROM daily_plans dp LEFT JOIN daily_plan_slots s ON s.daily_plan_id=dp.id
+        WHERE dp.member_id=? AND dp.plan_date LIKE ?
+        GROUP BY dp.id ORDER BY dp.plan_date DESC""",(u['id'],month+'%')).fetchall()
+    return jsonify(rs(rows))
+
 def _save_daily_plan_slots(db, member_id, plan_date, slots):
     row=db.execute("SELECT id FROM daily_plans WHERE member_id=? AND plan_date=?",(member_id,plan_date)).fetchone()
     if row:
