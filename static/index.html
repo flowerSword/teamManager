@@ -2541,10 +2541,12 @@ async function renderDayPlan(){
     <div class="ptitle">🗓️ 每日计划</div>
     <div style="display:flex;gap:7px;flex-wrap:wrap">
       <button class="btn" onclick="openDpHistory()">📜 历史计划</button>
+      <button class="btn" onclick="openReminderManager()">⏰ 提醒事项</button>
       <button class="btn" onclick="openTemplateManager()">📋 管理模板</button>
       <button class="btn btn-pri" onclick="saveDayPlan()">💾 保存</button>
     </div>
   </div>
+  <div id="dp-reminders"></div>
   <div class="card">
     <div class="fbar" style="flex-wrap:wrap;align-items:center;gap:10px">
       <input class="fi" type="date" style="width:150px" value="${dpDate}" onchange="dpDate=this.value;loadDpDay()">
@@ -2573,7 +2575,116 @@ async function loadDpDay(){
   if(grid) grid.innerHTML='加载中...';
   const res=await GET('/plan/day/'+dpDate)||{slots:[]};
   dpSlots=(res.slots||[]).map(s=>({start_time:s.start_time,end_time:s.end_time,content:s.content||'',task_id:s.task_id||''}));
+  dpActiveReminders=res.reminders||[];
   renderDpGrid();
+  renderDpReminderAlerts();
+}
+
+// ── 提醒事项（提前录入截止日/待办，临近时在每日计划中提醒）──────
+let dpActiveReminders=[], dpReminders=[];
+function renderDpReminderAlerts(){
+  const el=document.getElementById('dp-reminders');
+  if(!el) return;
+  if(!dpActiveReminders.length){el.innerHTML='';return;}
+  el.innerHTML=dpActiveReminders.map(r=>{
+    const label=r.is_overdue?`<span style="color:#f87171;font-weight:700">已逾期 ${Math.abs(r.days_left)} 天</span>`
+      :r.days_left===0?`<span style="color:#f87171;font-weight:700">今天截止</span>`
+      :`<span style="color:#fbbf24;font-weight:700">还剩 ${r.days_left} 天（${r.due_date}）</span>`;
+    return `<div class="alert ${r.is_overdue||r.days_left===0?'al-warn':'al-info'}" style="justify-content:space-between;flex-wrap:wrap">
+      <span>⏰ ${esc(r.content)} · ${label}</span>
+      <span style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-sm" onclick="addReminderToPlan(${r.id})">＋ 加入计划</button>
+        <button class="btn btn-sm" onclick="markReminderDone(${r.id})">✓ 标记完成</button>
+      </span>
+    </div>`;
+  }).join('');
+}
+function addReminderToPlan(rid){
+  const r=dpActiveReminders.find(x=>x.id===rid);
+  if(!r) return;
+  dpSlots.push({start_time:'',end_time:'',content:r.content,task_id:''});
+  renderDpGrid();
+  toast('已加入当天计划，请填写时间段后保存');
+}
+async function markReminderDone(rid){
+  await PUT('/plan/reminders/'+rid,{status:'DONE'});
+  toast('已标记完成');
+  loadDpDay();
+}
+
+async function openReminderManager(){
+  dpReminders=await GET('/plan/reminders')||[];
+  renderReminderManagerBody();
+}
+function renderReminderManagerBody(){
+  const pending=dpReminders.filter(r=>r.status==='PENDING').sort((a,b)=>a.due_date<b.due_date?-1:1);
+  const done=dpReminders.filter(r=>r.status==='DONE');
+  const row=r=>{
+    const d=new Date(r.due_date), left=Math.round((d-new Date(today()))/86400000);
+    const leftLabel=r.status==='DONE'?'<span style="color:var(--tx3)">已完成</span>':
+      left<0?`<span style="color:#f87171">已逾期 ${Math.abs(left)} 天</span>`:
+      left===0?'<span style="color:#f87171">今天截止</span>':`<span style="color:var(--tx3)">还剩 ${left} 天</span>`;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
+      <div style="min-width:0">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.content)}</div>
+        <div style="font-size:12px;color:var(--tx3)">截止 ${r.due_date} · 提前 ${r.remind_days} 天提醒 · ${leftLabel}</div>
+      </div>
+      <span style="display:flex;gap:6px;flex-shrink:0">
+        ${r.status==='PENDING'?`<button class="btn btn-sm" onclick="markReminderDoneInMgr(${r.id})">✓ 完成</button>`:`<button class="btn btn-sm" onclick="reopenReminder(${r.id})">↺ 恢复</button>`}
+        <button class="btn btn-sm" onclick="openReminderEditor(${r.id})">编辑</button>
+        <button class="btn btn-sm btn-err" onclick="delPlanReminder(${r.id})">删除</button>
+      </span>
+    </div>`;
+  };
+  const body=`<div style="display:flex;flex-direction:column">
+    ${pending.length?pending.map(row).join(''):'<div class="empty">暂无待办提醒</div>'}
+    ${done.length?`<div style="margin-top:10px;font-size:12px;color:var(--tx3)">已完成</div>${done.map(row).join('')}`:''}
+    <button class="btn btn-pri" style="margin-top:4px" onclick="openReminderEditor(null)">＋ 新建提醒</button>
+  </div>`;
+  openModal('⏰ 提醒事项（截止日/待办）',body,closeModal,true);
+}
+async function markReminderDoneInMgr(id){
+  await PUT('/plan/reminders/'+id,{status:'DONE'});
+  dpReminders=await GET('/plan/reminders')||[];
+  renderReminderManagerBody();
+  if(document.getElementById('dp-reminders')) loadDpDay();
+}
+async function reopenReminder(id){
+  await PUT('/plan/reminders/'+id,{status:'PENDING'});
+  dpReminders=await GET('/plan/reminders')||[];
+  renderReminderManagerBody();
+  if(document.getElementById('dp-reminders')) loadDpDay();
+}
+async function delPlanReminder(id){
+  if(!confirm('确认删除该提醒？')) return;
+  await DEL('/plan/reminders/'+id);
+  dpReminders=await GET('/plan/reminders')||[];
+  renderReminderManagerBody();
+  if(document.getElementById('dp-reminders')) loadDpDay();
+}
+let dpEditReminderId=null;
+function openReminderEditor(id){
+  dpEditReminderId=id;
+  const r=id?dpReminders.find(x=>x.id===id):{content:'',due_date:today(),remind_days:2};
+  const body=`<div class="fgroup"><label class="flabel">事项内容</label><input id="pr-content" class="fi" value="${esc(r.content||'')}" placeholder="例如：提交周报 / XX需求验收"></div>
+  <div class="frow c2">
+    <div class="fgroup"><label class="flabel">截止日期 / 需要做的那天</label><input id="pr-due" class="fi" type="date" value="${r.due_date||today()}"></div>
+    <div class="fgroup"><label class="flabel">提前几天开始提醒</label><input id="pr-days" class="fi" type="number" min="0" max="30" value="${r.remind_days!=null?r.remind_days:2}"></div>
+  </div>`;
+  openModal(id?'编辑提醒':'新建提醒',body,saveReminderEditor,true);
+}
+async function saveReminderEditor(){
+  const content=gv('pr-content'), due_date=gv('pr-due'), remind_days=parseInt(gv('pr-days')||'2');
+  if(!content){toast('事项内容不能为空','err');return;}
+  if(!due_date){toast('请选择日期','err');return;}
+  const payload={content,due_date,remind_days};
+  const res=dpEditReminderId?await PUT('/plan/reminders/'+dpEditReminderId,payload):await POST('/plan/reminders',payload);
+  if(res){
+    toast('保存成功');
+    dpReminders=await GET('/plan/reminders')||[];
+    renderReminderManagerBody();
+    if(document.getElementById('dp-reminders')) loadDpDay();
+  }
 }
 
 function renderDpGrid(){

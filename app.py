@@ -129,6 +129,15 @@ CREATE TABLE IF NOT EXISTS daily_plan_slots (
     start_time TEXT NOT NULL, end_time TEXT NOT NULL,
     content TEXT, task_id INTEGER, sort_order INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS plan_reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id INTEGER NOT NULL REFERENCES members(id),
+    content TEXT NOT NULL,
+    due_date TEXT NOT NULL,
+    remind_days INTEGER DEFAULT 2,
+    status TEXT DEFAULT 'PENDING',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
 CREATE INDEX IF NOT EXISTS idx_ci ON check_ins(member_id, check_date);
 CREATE INDEX IF NOT EXISTS idx_tg ON tasks(group_name);
 CREATE INDEX IF NOT EXISTS idx_ta ON tasks(assignee_id);
@@ -139,6 +148,7 @@ CREATE INDEX IF NOT EXISTS idx_pt ON plan_templates(member_id);
 CREATE INDEX IF NOT EXISTS idx_pts ON plan_template_slots(template_id);
 CREATE INDEX IF NOT EXISTS idx_dp ON daily_plans(member_id, plan_date);
 CREATE INDEX IF NOT EXISTS idx_dps ON daily_plan_slots(daily_plan_id);
+CREATE INDEX IF NOT EXISTS idx_pr ON plan_reminders(member_id, due_date);
 """)
     # Migration: add estimated_days if not exists
     try:
@@ -932,11 +942,30 @@ def del_plan_template(tpl_id):
     db.execute("DELETE FROM plan_templates WHERE id=?",(tpl_id,)); db.commit()
     return '',204
 
+def _active_reminders_for_date(db, member_id, plan_date):
+    """Reminders relevant to planning `plan_date`: within their remind window
+    (due_date - remind_days .. due_date), or overdue and still pending."""
+    rows=rs(db.execute("SELECT * FROM plan_reminders WHERE member_id=? AND status='PENDING' ORDER BY due_date,id",(member_id,)).fetchall())
+    d=datetime.date.fromisoformat(plan_date)
+    out=[]
+    for r in rows:
+        due=datetime.date.fromisoformat(r['due_date'])
+        days_left=(due-d).days
+        r['days_left']=days_left
+        if d>due:
+            r['is_overdue']=True
+            out.append(r)
+        elif due-datetime.timedelta(days=int(r.get('remind_days') or 0))<=d<=due:
+            r['is_overdue']=False
+            out.append(r)
+    return out
+
 def _get_daily_plan(db, member_id, plan_date):
     plan=r2d(db.execute("SELECT * FROM daily_plans WHERE member_id=? AND plan_date=?",(member_id,plan_date)).fetchone())
-    if not plan: return {'date':plan_date,'slots':[]}
+    reminders=_active_reminders_for_date(db,member_id,plan_date)
+    if not plan: return {'date':plan_date,'slots':[],'reminders':reminders}
     slots=rs(db.execute("SELECT * FROM daily_plan_slots WHERE daily_plan_id=? ORDER BY sort_order,id",(plan['id'],)).fetchall())
-    plan['date']=plan['plan_date']; plan['slots']=slots
+    plan['date']=plan['plan_date']; plan['slots']=slots; plan['reminders']=reminders
     return plan
 
 @app.route('/api/plan/day/<dt>')
@@ -944,6 +973,59 @@ def _get_daily_plan(db, member_id, plan_date):
 def get_daily_plan(dt):
     u=current_user()
     return jsonify(_get_daily_plan(get_db(),u['id'],dt))
+
+@app.route('/api/plan/reminders')
+@login_required
+def list_plan_reminders():
+    u=current_user(); db=get_db()
+    status=request.args.get('status')
+    if status:
+        rows=rs(db.execute("SELECT * FROM plan_reminders WHERE member_id=? AND status=? ORDER BY due_date,id",(u['id'],status)).fetchall())
+    else:
+        rows=rs(db.execute("SELECT * FROM plan_reminders WHERE member_id=? ORDER BY due_date,id",(u['id'],)).fetchall())
+    return jsonify(rows)
+
+@app.route('/api/plan/reminders', methods=['POST'])
+@login_required
+def add_plan_reminder():
+    u=current_user(); db=get_db(); d=request.json or {}
+    content=(d.get('content') or '').strip()
+    due_date=d.get('due_date')
+    if not content: return jsonify({'error':'事项内容不能为空'}),400
+    if not due_date: return jsonify({'error':'截止日期不能为空'}),400
+    remind_days=int(d.get('remind_days') or 2)
+    c=db.execute("INSERT INTO plan_reminders(member_id,content,due_date,remind_days) VALUES(?,?,?,?)",
+        (u['id'],content,due_date,remind_days))
+    db.commit()
+    return jsonify(r2d(db.execute("SELECT * FROM plan_reminders WHERE id=?",(c.lastrowid,)).fetchone())),201
+
+@app.route('/api/plan/reminders/<int:rid>', methods=['PUT'])
+@login_required
+def upd_plan_reminder(rid):
+    u=current_user(); db=get_db()
+    existing=r2d(db.execute("SELECT * FROM plan_reminders WHERE id=?",(rid,)).fetchone())
+    if not existing: return ('',404)
+    if existing['member_id']!=u['id']: return jsonify({'error':'无权限'}),403
+    d=request.json or {}
+    content=(d.get('content') if d.get('content') is not None else existing['content']).strip()
+    due_date=d.get('due_date') or existing['due_date']
+    remind_days=int(d.get('remind_days') if d.get('remind_days') is not None else existing['remind_days'])
+    status=d.get('status') or existing['status']
+    if not content: return jsonify({'error':'事项内容不能为空'}),400
+    db.execute("UPDATE plan_reminders SET content=?,due_date=?,remind_days=?,status=? WHERE id=?",
+        (content,due_date,remind_days,status,rid))
+    db.commit()
+    return jsonify(r2d(db.execute("SELECT * FROM plan_reminders WHERE id=?",(rid,)).fetchone()))
+
+@app.route('/api/plan/reminders/<int:rid>', methods=['DELETE'])
+@login_required
+def del_plan_reminder(rid):
+    u=current_user(); db=get_db()
+    existing=r2d(db.execute("SELECT * FROM plan_reminders WHERE id=?",(rid,)).fetchone())
+    if not existing: return ('',404)
+    if existing['member_id']!=u['id']: return jsonify({'error':'无权限'}),403
+    db.execute("DELETE FROM plan_reminders WHERE id=?",(rid,)); db.commit()
+    return '',204
 
 @app.route('/api/plan/history')
 @login_required
