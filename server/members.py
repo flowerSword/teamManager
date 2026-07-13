@@ -86,6 +86,12 @@ def hard_del_member(mid):
     # 删除关联数据
     db.execute("DELETE FROM check_ins WHERE member_id=?",(mid,))
     db.execute("DELETE FROM task_logs WHERE member_id=?",(mid,))
+    # plan_templates/daily_plans 对 members 有外键约束，plan_template_slots/daily_plan_slots
+    # 会随父行 ON DELETE CASCADE 自动清理；overtime_requests、plan_reminders 无子表
+    db.execute("DELETE FROM plan_templates WHERE member_id=?",(mid,))
+    db.execute("DELETE FROM daily_plans WHERE member_id=?",(mid,))
+    db.execute("DELETE FROM overtime_requests WHERE member_id=?",(mid,))
+    db.execute("DELETE FROM plan_reminders WHERE member_id=?",(mid,))
     # 任务：把 assignee 清空，不删任务本身
     db.execute("UPDATE tasks SET assignee_id=NULL,assignee_name='（已删除）' WHERE assignee_id=?",(mid,))
     db.execute("DELETE FROM members WHERE id=?",(mid,))
