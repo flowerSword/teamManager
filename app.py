@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS members (
     email TEXT, phone TEXT, role TEXT DEFAULT 'DEVELOPER',
     group_name TEXT, is_admin INTEGER DEFAULT 0,
     is_active INTEGER DEFAULT 1,
+    employee_no TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS check_ins (
@@ -129,6 +130,19 @@ CREATE TABLE IF NOT EXISTS daily_plan_slots (
     start_time TEXT NOT NULL, end_time TEXT NOT NULL,
     content TEXT, task_id INTEGER, sort_order INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS overtime_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id INTEGER NOT NULL REFERENCES members(id),
+    employee_no TEXT, member_name TEXT,
+    start_date TEXT NOT NULL, start_time TEXT NOT NULL,
+    end_date TEXT NOT NULL, end_time TEXT NOT NULL,
+    rest_start_time TEXT, rest_end_time TEXT,
+    overtime_type TEXT NOT NULL,
+    reason TEXT,
+    locked INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+);
 CREATE TABLE IF NOT EXISTS plan_reminders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     member_id INTEGER NOT NULL REFERENCES members(id),
@@ -149,6 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_pts ON plan_template_slots(template_id);
 CREATE INDEX IF NOT EXISTS idx_dp ON daily_plans(member_id, plan_date);
 CREATE INDEX IF NOT EXISTS idx_dps ON daily_plan_slots(daily_plan_id);
 CREATE INDEX IF NOT EXISTS idx_pr ON plan_reminders(member_id, due_date);
+CREATE INDEX IF NOT EXISTS idx_ot ON overtime_requests(member_id, start_date);
 """)
     # Migration: add estimated_days if not exists
     try:
@@ -174,6 +189,22 @@ CREATE INDEX IF NOT EXISTS idx_pr ON plan_reminders(member_id, due_date);
     except: pass
     try:
         db.execute("ALTER TABLE task_logs ADD COLUMN hours REAL DEFAULT 0")
+        db.commit()
+    except: pass
+    try:
+        db.execute("ALTER TABLE daily_plan_slots ADD COLUMN completed INTEGER DEFAULT 0")
+        db.commit()
+    except: pass
+    try:
+        db.execute("ALTER TABLE daily_plan_slots ADD COLUMN progress INTEGER")
+        db.commit()
+    except: pass
+    try:
+        db.execute("ALTER TABLE daily_plan_slots ADD COLUMN hours REAL DEFAULT 0")
+        db.commit()
+    except: pass
+    try:
+        db.execute("ALTER TABLE members ADD COLUMN employee_no TEXT")
         db.commit()
     except: pass
     try:
@@ -372,9 +403,9 @@ def change_password():
 def list_members():
     u=current_user(); db=get_db()
     if u['is_admin']:
-        rows=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,created_at FROM members ORDER BY id").fetchall()
+        rows=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no,created_at FROM members ORDER BY id").fetchall()
     else:
-        rows=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,created_at FROM members WHERE group_name=? AND is_active=1 ORDER BY id",(u['group_name'],)).fetchall()
+        rows=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no,created_at FROM members WHERE group_name=? AND is_active=1 ORDER BY id",(u['group_name'],)).fetchall()
     return jsonify(rs(rows))
 
 @app.route('/api/members/active')
@@ -392,12 +423,13 @@ def active_members():
 def add_member():
     d=request.json; db=get_db()
     raw=d.get('password','123456'); pw_store=hash_pw(raw) if d.get('pw_plain') else (raw if len(raw)==64 else hash_pw(raw))
-    c=db.execute("INSERT INTO members(name,username,password,email,phone,role,group_name,is_admin,is_active) VALUES(?,?,?,?,?,?,?,?,?)",
+    c=db.execute("INSERT INTO members(name,username,password,email,phone,role,group_name,is_admin,is_active,employee_no) VALUES(?,?,?,?,?,?,?,?,?,?)",
         (d['name'],d['username'],pw_store,d.get('email'),d.get('phone'),
-         d.get('role','DEVELOPER'),d.get('group_name'),1 if d.get('is_admin') else 0,1 if d.get('is_active',True) else 0))
+         d.get('role','DEVELOPER'),d.get('group_name'),1 if d.get('is_admin') else 0,1 if d.get('is_active',True) else 0,
+         d.get('employee_no')))
     seed_default_plan_templates(db, c.lastrowid)
     db.commit()
-    row=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active FROM members WHERE id=?",(c.lastrowid,)).fetchone()
+    row=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no FROM members WHERE id=?",(c.lastrowid,)).fetchone()
     return jsonify(r2d(row)),201
 
 @app.route('/api/members/<int:mid>', methods=['PUT'])
@@ -408,14 +440,14 @@ def upd_member(mid):
         if mid!=u['id']: return jsonify({'error':'无权限'}),403
         db.execute("UPDATE members SET email=?,phone=? WHERE id=?",(d.get('email'),d.get('phone'),mid))
     else:
-        db.execute("UPDATE members SET name=?,username=?,email=?,phone=?,role=?,group_name=?,is_admin=?,is_active=? WHERE id=?",
+        db.execute("UPDATE members SET name=?,username=?,email=?,phone=?,role=?,group_name=?,is_admin=?,is_active=?,employee_no=? WHERE id=?",
             (d['name'],d['username'],d.get('email'),d.get('phone'),d.get('role','DEVELOPER'),
-             d.get('group_name'),1 if d.get('is_admin') else 0,1 if d.get('is_active',True) else 0,mid))
+             d.get('group_name'),1 if d.get('is_admin') else 0,1 if d.get('is_active',True) else 0,d.get('employee_no'),mid))
         if d.get('password'):
             raw2=d['password']; pw2=hash_pw(raw2) if d.get('pw_plain') else (raw2 if len(raw2)==64 else hash_pw(raw2))
             db.execute("UPDATE members SET password=? WHERE id=?",(pw2,mid))
     db.commit()
-    row=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active FROM members WHERE id=?",(mid,)).fetchone()
+    row=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no FROM members WHERE id=?",(mid,)).fetchone()
     return jsonify(r2d(row)) if row else ('',404)
 
 @app.route('/api/members/<int:mid>', methods=['DELETE'])
@@ -445,6 +477,78 @@ def hard_del_member(mid):
     db.execute("DELETE FROM members WHERE id=?",(mid,))
     db.commit()
     return jsonify({'ok':True})
+
+# ── Overtime ─────────────────────────────────────────────────
+def _can_edit_overtime(u, row):
+    return (not row['locked']) and (u['is_admin'] or row['member_id']==u['id'])
+
+@app.route('/api/overtime')
+@login_required
+def list_overtime():
+    db=get_db()
+    month=request.args.get('month') or today()[:7]
+    rows=rs(db.execute("SELECT * FROM overtime_requests WHERE start_date LIKE ? ORDER BY start_date,id",(month+'%',)).fetchall())
+    return jsonify(rows)
+
+@app.route('/api/overtime', methods=['POST'])
+@login_required
+def add_overtime():
+    u=current_user(); d=request.json or {}; db=get_db()
+    employee_no=d.get('employee_no') or u.get('employee_no')
+    start_date=d.get('start_date'); start_time=d.get('start_time')
+    end_date=d.get('end_date'); end_time=d.get('end_time')
+    overtime_type=d.get('overtime_type')
+    if not (employee_no and start_date and start_time and end_date and end_time and overtime_type):
+        return jsonify({'error':'请填写完整的必填项'}),400
+    if overtime_type not in ('转加班费','转调休'):
+        return jsonify({'error':'加班类型不合法'}),400
+    c=db.execute("""INSERT INTO overtime_requests(member_id,employee_no,member_name,start_date,start_time,end_date,end_time,
+        rest_start_time,rest_end_time,overtime_type,reason) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+        (u['id'],employee_no,u['name'],start_date,start_time,end_date,end_time,
+         d.get('rest_start_time'),d.get('rest_end_time'),overtime_type,d.get('reason')))
+    db.commit()
+    return jsonify(r2d(db.execute("SELECT * FROM overtime_requests WHERE id=?",(c.lastrowid,)).fetchone())),201
+
+@app.route('/api/overtime/<int:oid>', methods=['PUT'])
+@login_required
+def upd_overtime(oid):
+    u=current_user(); d=request.json or {}; db=get_db()
+    row=r2d(db.execute("SELECT * FROM overtime_requests WHERE id=?",(oid,)).fetchone())
+    if not row: return '',404
+    if not _can_edit_overtime(u,row): return jsonify({'error':'无权限'}),403
+    start_date=d.get('start_date') or row['start_date']; start_time=d.get('start_time') or row['start_time']
+    end_date=d.get('end_date') or row['end_date']; end_time=d.get('end_time') or row['end_time']
+    overtime_type=d.get('overtime_type') or row['overtime_type']
+    if overtime_type not in ('转加班费','转调休'):
+        return jsonify({'error':'加班类型不合法'}),400
+    db.execute("""UPDATE overtime_requests SET start_date=?,start_time=?,end_date=?,end_time=?,
+        rest_start_time=?,rest_end_time=?,overtime_type=?,reason=?,updated_at=? WHERE id=?""",
+        (start_date,start_time,end_date,end_time,
+         d.get('rest_start_time',row.get('rest_start_time')),d.get('rest_end_time',row.get('rest_end_time')),
+         overtime_type,d.get('reason',row.get('reason')),now_str(),oid))
+    db.commit()
+    return jsonify(r2d(db.execute("SELECT * FROM overtime_requests WHERE id=?",(oid,)).fetchone()))
+
+@app.route('/api/overtime/<int:oid>', methods=['DELETE'])
+@login_required
+def del_overtime(oid):
+    u=current_user(); db=get_db()
+    row=r2d(db.execute("SELECT * FROM overtime_requests WHERE id=?",(oid,)).fetchone())
+    if not row: return '',404
+    if not _can_edit_overtime(u,row): return jsonify({'error':'无权限'}),403
+    db.execute("DELETE FROM overtime_requests WHERE id=?",(oid,)); db.commit()
+    return '',204
+
+@app.route('/api/overtime/<int:oid>/lock', methods=['POST'])
+@admin_required
+def lock_overtime(oid):
+    d=request.json or {}; db=get_db()
+    row=db.execute("SELECT id FROM overtime_requests WHERE id=?",(oid,)).fetchone()
+    if not row: return '',404
+    db.execute("UPDATE overtime_requests SET locked=?,updated_at=? WHERE id=?",
+        (1 if d.get('locked') else 0,now_str(),oid))
+    db.commit()
+    return jsonify(r2d(db.execute("SELECT * FROM overtime_requests WHERE id=?",(oid,)).fetchone()))
 
 # ── Check-in ─────────────────────────────────────────────────
 def get_config(key, default=''):
@@ -536,6 +640,9 @@ def checkin():
             # Use existing time to re-evaluate late status if no explicit status
             status  = d.get('status') or detect_status(ci_time[11:16] if ci_time else '00:00')
         else:
+            now_hm = now_str()[11:16]
+            if now_hm < '04:00':
+                return jsonify({'error': '凌晨4点后才能签到今日出勤，请稍后再试'}), 403
             ci_time = now_str()
             # Auto-detect PRESENT vs LATE; member cannot choose these two — only LEAVE/REMOTE/ABSENT allowed as override
             requested = d.get('status', '')
@@ -1046,8 +1153,10 @@ def _save_daily_plan_slots(db, member_id, plan_date, slots):
         plan_id=db.execute("INSERT INTO daily_plans(member_id,plan_date) VALUES(?,?)",(member_id,plan_date)).lastrowid
     db.execute("DELETE FROM daily_plan_slots WHERE daily_plan_id=?",(plan_id,))
     for i,s in enumerate(slots or []):
-        db.execute("INSERT INTO daily_plan_slots(daily_plan_id,start_time,end_time,content,task_id,sort_order) VALUES(?,?,?,?,?,?)",
-            (plan_id,s.get('start_time'),s.get('end_time'),s.get('content'),s.get('task_id') or None,i))
+        db.execute("""INSERT INTO daily_plan_slots(daily_plan_id,start_time,end_time,content,task_id,sort_order,completed,progress,hours)
+            VALUES(?,?,?,?,?,?,?,?,?)""",
+            (plan_id,s.get('start_time'),s.get('end_time'),s.get('content'),s.get('task_id') or None,i,
+             s.get('completed') or 0, s.get('progress'), s.get('hours') or 0))
     db.commit()
     return plan_id
 
