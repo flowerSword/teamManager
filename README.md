@@ -131,7 +131,9 @@ PORT=9000 python app.py
 
 点击任务名称可添加进度日志，每条日志包含日期、进度百分比、耗时（含快捷小时选项）、内容描述，用于甘特图日期高亮、成员视图展示、报表中心的工时统计和"进展记录"页面。
 
-普通成员补录进展的日期不能早于 3 天前（避免长期不更新真实进度）；管理员不受此限制，可为任意历史日期补录进展。
+已提交的进展记录支持修改和删除，但只能操作自己提交的（管理员可操作任意人的）；修改/删除历史进展不会反过来改动任务当前的进度和状态，只影响该条日志本身。
+
+普通成员补录/修改进展的日期不能早于 3 天前（避免长期不更新真实进度）；管理员不受此限制，可为任意历史日期补录或修改进展。
 
 **需求单号 / 问题单号：**
 
@@ -227,6 +229,10 @@ PORT=9000 python app.py
 ---
 
 ## 版本更新记录
+
+### v1.17（2026-07-13）
+
+- **新增**：任务进度日志支持修改和删除，仅限本人提交的记录（管理员不受此限），编辑/删除不会反向改动任务当前进度和状态；修改进展日期同样遵守"普通成员不早于3天前"的限制，管理员豁免
 
 ### v1.16（2026-07-13）
 
@@ -325,8 +331,8 @@ PORT=9000 python app.py
 
 ## 技术说明
 
-- **后端**：Python 3 + Flask，`app.py`（~27 行，仅作为启动入口）+ `server/` 包（按功能拆分为 `auth.py`/`members.py`/`checkin.py`/`tasks.py`/`dayplan.py`/`overtime.py`/`stats.py`/`config_routes.py` 等模块，通过 Flask Blueprint 注册，共约 1790 行）
-- **前端**：原生 JavaScript SPA，`static/index.html`（~77 行外壳）+ `static/css/style.css` + 按页面/功能拆分的 `static/js/*.js`（`core.js`/`dashboard.js`/`checkin.js`/`tasks.js`/`team.js`/`reports.js`/`dayplan.js`/`overtime.js`/`progress.js` 等 14 个文件，共约 3580 行），均为普通 `<script>` 标签加载，无构建步骤、无 npm、无外部依赖
+- **后端**：Python 3 + Flask，`app.py`（~27 行，仅作为启动入口）+ `server/` 包（按功能拆分为 `auth.py`/`members.py`/`checkin.py`/`tasks.py`/`dayplan.py`/`overtime.py`/`stats.py`/`config_routes.py` 等模块，通过 Flask Blueprint 注册，共约 1830 行）
+- **前端**：原生 JavaScript SPA，`static/index.html`（~77 行外壳）+ `static/css/style.css` + 按页面/功能拆分的 `static/js/*.js`（`core.js`/`dashboard.js`/`checkin.js`/`tasks.js`/`team.js`/`reports.js`/`dayplan.js`/`overtime.js`/`progress.js` 等 14 个文件，共约 3630 行），均为普通 `<script>` 标签加载，无构建步骤、无 npm、无外部依赖
 - **数据库**：SQLite（WAL 模式 + 外键约束），文件位于 `data/teammanager.db`；结构变更通过 `init_db()` 的增量 `ALTER TABLE` 自动完成，旧数据库文件可直接被新版本读取升级
 - **依赖**：Flask、openpyxl 等全部内置于 `wheels/` 目录，运行无需联网
 - **密码**：客户端 SHA-256 加密后传输，服务端存储 SHA-256 哈希值

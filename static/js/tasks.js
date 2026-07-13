@@ -274,10 +274,13 @@ async function exportTasks(){
 // ════════════════════════════════════════════
 // LOG PANEL (side panel for task logs)
 // ════════════════════════════════════════════
+let logPanelTid=null, logPanelLogs=[], logEditingId=null;
+
 async function openLogPanel(tid){
   const [task,logs]=await Promise.all([GET('/tasks/'+tid),GET('/tasks/'+tid+'/logs')]);
   if(!task)return;
-  const allLogs=logs||[];
+  logPanelTid=tid; logPanelLogs=logs||[]; logEditingId=null;
+  const allLogs=logPanelLogs;
   const canEdit=ME.is_admin||task.assignee_id===ME.id||task.created_by===ME.id;
   document.getElementById('mw').innerHTML=`
   <div class="ov" id="mov">
@@ -317,25 +320,76 @@ async function openLogPanel(tid){
           <button class="btn btn-pri" style="width:100%" onclick="submitLog(${tid})">提交进展</button>
         </div>`:''}
         <div class="ctitle" style="margin-bottom:12px">📜 历史进展记录 (${allLogs.length}条)</div>
-        <div class="log-tl" id="log-list">
-          ${allLogs.length?allLogs.map(l=>`
-          <div class="log-item">
-            <div class="log-dot"></div>
-            <div class="log-hd">
-              <span class="log-date">${l.log_date}</span>
-              <span class="log-author">by ${esc(l.member_name||'')}</span>
-              ${l.progress_snapshot!=null?`<span class="bd bd-blue" style="font-size:10px">进度 ${l.progress_snapshot}%</span>`:''}
-              ${l.status_snapshot?`<span class="bd ${SC[l.status_snapshot]||'bd-gray'}" style="font-size:10px">${SZ[l.status_snapshot]||l.status_snapshot}</span>`:''}
-              ${l.hours?`<span class="bd bd-teal" style="font-size:10px">耗时 ${l.hours}h</span>`:''}
-            </div>
-            <div class="log-body">${esc(l.content)}</div>
-          </div>`).join('')
-          :'<div class="empty">暂无进展记录<br><small>添加第一条工作日志</small></div>'}
-        </div>
+        <div class="log-tl" id="log-list">${renderLogListHtml()}</div>
       </div>
       <div class="mft"><button class="btn btn-ghost" onclick="closeModal()">关闭</button></div>
     </div>
   </div>`;
+}
+
+function renderLogListHtml(){
+  if(!logPanelLogs.length) return '<div class="empty">暂无进展记录<br><small>添加第一条工作日志</small></div>';
+  return logPanelLogs.map(l=>{
+    const canEditLog=ME.is_admin||l.member_id===ME.id;
+    if(logEditingId===l.id){
+      return `<div class="log-item">
+        <div class="log-dot"></div>
+        <div style="background:var(--s2);border-radius:8px;padding:10px 12px">
+          <div class="frow c2" style="margin-bottom:6px">
+            <div class="fgroup"><label class="flabel">日期</label><input id="le-date-${l.id}" class="fi" type="date" value="${l.log_date}"></div>
+            <div class="fgroup"><label class="flabel">工时(h)</label><input id="le-hours-${l.id}" class="fi" type="number" min="0" step="0.5" value="${l.hours||0}"></div>
+          </div>
+          <div class="fgroup"><label class="flabel">工作内容</label><textarea id="le-content-${l.id}" class="fi" rows="2">${esc(l.content)}</textarea></div>
+          <div class="fgroup"><label class="flabel">进度%（留空不改）</label><input id="le-prog-${l.id}" class="fi" type="number" min="0" max="100" value="${l.progress_snapshot!=null?l.progress_snapshot:''}"></div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-sm btn-pri" onclick="saveEditLog(${logPanelTid},${l.id})">保存</button>
+            <button class="btn btn-sm" onclick="cancelEditLog()">取消</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    return `<div class="log-item">
+      <div class="log-dot"></div>
+      <div class="log-hd">
+        <span class="log-date">${l.log_date}</span>
+        <span class="log-author">by ${esc(l.member_name||'')}</span>
+        ${l.progress_snapshot!=null?`<span class="bd bd-blue" style="font-size:10px">进度 ${l.progress_snapshot}%</span>`:''}
+        ${l.status_snapshot?`<span class="bd ${SC[l.status_snapshot]||'bd-gray'}" style="font-size:10px">${SZ[l.status_snapshot]||l.status_snapshot}</span>`:''}
+        ${l.hours?`<span class="bd bd-teal" style="font-size:10px">耗时 ${l.hours}h</span>`:''}
+        ${canEditLog?`<span style="margin-left:auto;display:flex;gap:4px;flex-shrink:0">
+          <button class="btn btn-sm" style="padding:2px 8px;font-size:11px" onclick="startEditLog(${l.id})">编辑</button>
+          <button class="btn btn-sm btn-err" style="padding:2px 8px;font-size:11px" onclick="deleteLogEntry(${logPanelTid},${l.id})">删除</button>
+        </span>`:''}
+      </div>
+      <div class="log-body">${esc(l.content)}</div>
+    </div>`;
+  }).join('');
+}
+
+function startEditLog(lid){
+  logEditingId=lid;
+  document.getElementById('log-list').innerHTML=renderLogListHtml();
+}
+function cancelEditLog(){
+  logEditingId=null;
+  document.getElementById('log-list').innerHTML=renderLogListHtml();
+}
+
+async function saveEditLog(tid,lid){
+  const content=gv('le-content-'+lid).trim();
+  if(!content){toast('工作内容不能为空','err');return;}
+  const payload={content,log_date:gv('le-date-'+lid)};
+  const prog=gv('le-prog-'+lid); if(prog!=='') payload.progress=parseInt(prog);
+  const hrs=gv('le-hours-'+lid); if(hrs!=='') payload.hours=parseFloat(hrs);
+  const res=await PUT('/tasks/'+tid+'/logs/'+lid,payload);
+  if(res){toast('已保存');openLogPanel(tid);}
+}
+
+async function deleteLogEntry(tid,lid){
+  if(!confirm('确认删除这条进展记录？此操作不可恢复')) return;
+  await DEL('/tasks/'+tid+'/logs/'+lid);
+  toast('已删除');
+  openLogPanel(tid);
 }
 
 async function submitLog(tid){

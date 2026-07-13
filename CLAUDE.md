@@ -51,7 +51,7 @@ There is no test suite.
 
 **Check-in time gate:** Non-admin members cannot create a check-in for today before 04:00 server time (`checkin()` in `server/checkin.py`, member branch) — returns 403. Admin-entered check-ins (any date/time/status) are exempt.
 
-**Progress-log backdating limit:** `add_log()` in `server/tasks.py` rejects `log_date` older than `today - 3 days` for non-admins (400). Admins are exempt and can backfill any historical date.
+**Progress-log backdating limit:** `add_log()`/`upd_log()` in `server/tasks.py` reject `log_date` older than `today - 3 days` for non-admins (400). Admins are exempt and can backfill any historical date. Editing/deleting a log (`upd_log`/`del_log`, gated by `_can_edit_log` — author or admin) never retroactively touches `tasks.progress`/`tasks.status`; those only change via a fresh `add_log()` call, by design, so editing an old log can't silently rewrite the task's current state.
 
 **Auto-risk logic:** `auto_risk()` is called on every task create/update. A task past its `plan_end_date` is always force-flagged `has_risk=1` regardless of user choice. Otherwise, risk is only auto-computed when the user has manually set `has_risk=1`: flags within 1 day of `plan_end_date` with progress < 80%. A user-selected "no risk" is respected (not overridden) as long as the task isn't overdue.
 
@@ -130,6 +130,7 @@ All routes are prefixed `/api/`. Key groupings:
 - `/api/tasks/<id>/subtasks` — child tasks of a given `parent_task_id`
 - `/api/tasks/stats/<gn>` — delivery count by month/status
 - `/api/tasks/<id>/logs` — task progress diary (GET/POST)
+- `/api/tasks/<id>/logs/<lid>` — PUT/DELETE a single log entry, only by its own author (`member_id`) or admin; PUT applies the same 3-day backdating limit as POST (see below)
 - `/api/tasks/logs/mine` — current user's recent logs
 - `/api/stats/delivery` — on-time delivery rate per member (REQUIREMENT tasks only; on-time = `actual_end_date <= plan_end_date`)
 - `/api/stats/timelog` — a member's hours breakdown by task/type/date for a month range

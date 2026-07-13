@@ -204,6 +204,47 @@ def add_log(tid):
     return jsonify(r2d(db.execute("SELECT * FROM task_logs WHERE id=?",(c.lastrowid,)).fetchone())),201
 
 
+def _can_edit_log(u, log):
+    return u['is_admin'] or log['member_id']==u['id']
+
+
+@tasks_bp.route('/api/tasks/<int:tid>/logs/<int:lid>', methods=['PUT'])
+@login_required
+def upd_log(tid, lid):
+    u=current_user(); db=get_db()
+    existing=r2d(db.execute("SELECT * FROM task_logs WHERE id=? AND task_id=?",(lid,tid)).fetchone())
+    if not existing: return ('',404)
+    if not _can_edit_log(u,existing): return jsonify({'error':'只能修改自己提交的进展记录'}),403
+    d=request.json or {}
+    content=(d.get('content') if d.get('content') is not None else existing['content']).strip()
+    if not content: return jsonify({'error':'进展内容不能为空'}),400
+    log_date=d.get('log_date') or existing['log_date']
+    if not u['is_admin']:
+        min_date=(datetime.date.today()-datetime.timedelta(days=3)).isoformat()
+        if log_date<min_date:
+            return jsonify({'error':'进展日期不能早于3天前，如需修改历史进展请联系管理员'}),400
+    new_prog=d.get('progress',existing.get('progress_snapshot'))
+    new_stat=d.get('status',existing.get('status_snapshot'))
+    try: hours=max(0.0,float(d.get('hours',existing.get('hours')) or 0))
+    except (TypeError,ValueError): hours=existing.get('hours') or 0.0
+    db.execute("UPDATE task_logs SET log_date=?,content=?,progress_snapshot=?,status_snapshot=?,hours=? WHERE id=?",
+        (log_date,content,new_prog,new_stat,hours,lid))
+    db.commit()
+    return jsonify(r2d(db.execute("SELECT * FROM task_logs WHERE id=?",(lid,)).fetchone()))
+
+
+@tasks_bp.route('/api/tasks/<int:tid>/logs/<int:lid>', methods=['DELETE'])
+@login_required
+def del_log(tid, lid):
+    u=current_user(); db=get_db()
+    existing=r2d(db.execute("SELECT * FROM task_logs WHERE id=? AND task_id=?",(lid,tid)).fetchone())
+    if not existing: return ('',404)
+    if not _can_edit_log(u,existing): return jsonify({'error':'只能删除自己提交的进展记录'}),403
+    db.execute("DELETE FROM task_logs WHERE id=?",(lid,))
+    db.commit()
+    return '',204
+
+
 @tasks_bp.route('/api/tasks/logs/mine')
 @login_required
 def my_logs():
