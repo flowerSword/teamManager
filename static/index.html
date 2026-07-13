@@ -2945,7 +2945,11 @@ async function renderOvertime(){
   document.getElementById('ct').innerHTML=`
   <div class="phd">
     <div class="ptitle">🕒 加班管理</div>
-    <button class="btn btn-pri" onclick="openOvertimeModal(null)">＋ 申请加班</button>
+    <div style="display:flex;gap:7px;flex-wrap:wrap">
+      <button class="btn" onclick="exportOvertime('month')">📥 导出本月</button>
+      <button class="btn" onclick="exportOvertime('year')">📥 导出全年</button>
+      <button class="btn btn-pri" onclick="openOvertimeModal(null)">＋ 申请加班</button>
+    </div>
   </div>
   <div class="card">
     <div class="fbar" style="flex-wrap:wrap;align-items:center;gap:10px">
@@ -3054,6 +3058,13 @@ async function toggleOvertimeLock(id,locked){
   await POST('/overtime/'+id+'/lock',{locked});
   toast(locked?'已锁定':'已解锁');
   loadOvertimeList();
+}
+
+async function exportOvertime(mode){
+  const [y,m]=otMonth.split('-');
+  const url=mode==='year'?`/api/export/overtime?year=${y}`:`/api/export/overtime?year=${y}&month=${parseInt(m)}`;
+  const blob=await fetch(url).then(r=>r.blob());
+  dlBlob(blob,mode==='year'?`加班记录_${y}年.xlsx`:`加班记录_${y}年${m}月.xlsx`);
 }
 
 // ════════════════════════════════════════════

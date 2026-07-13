@@ -1386,6 +1386,34 @@ def exp_tasks(gn):
     return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True,download_name="{}_{}_{}_{}.xlsx".format(gn,tname,s,e))
 
+@app.route('/api/export/overtime')
+@login_required
+def exp_overtime():
+    """Export overtime records to Excel. With `month`: single-month, one sheet.
+    Without `month` (year only): whole year, one sheet per month (Jan-Dec)."""
+    yr=int(request.args.get('year',datetime.date.today().year))
+    mo=request.args.get('month')
+    db=get_db()
+    headers=['工号','姓名','开始日期','开始时间','结束日期','结束时间','休息开始','休息结束','类型','理由','状态']
+    widths=[12,10,12,10,12,10,10,10,10,26,10]
+    wb=Workbook(); wb.remove(wb.active)
+    months=[int(mo)] if mo else list(range(1,13))
+    for m in months:
+        month_str="{}-{:02d}".format(yr,m)
+        rows=rs(db.execute("SELECT * FROM overtime_requests WHERE start_date LIKE ? ORDER BY start_date,id",(month_str+'%',)).fetchall())
+        ws=wb.create_sheet(title="{}年{}月".format(yr,m))
+        title_cell(ws,"加班记录 {}年{}月".format(yr,m),len(headers))
+        mkhdr(ws,3,headers,widths)
+        for r in rows:
+            ws.append([r.get('employee_no') or '',r.get('member_name') or '',r['start_date'],r['start_time'],
+                       r['end_date'],r['end_time'],r.get('rest_start_time') or '',r.get('rest_end_time') or '',
+                       r.get('overtime_type') or '',r.get('reason') or '',
+                       '已锁定' if r.get('locked') else '未锁定'])
+    buf=io.BytesIO(); wb.save(buf); buf.seek(0)
+    fname="加班记录_{}-{:02d}.xlsx".format(yr,int(mo)) if mo else "加班记录_{}.xlsx".format(yr)
+    return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                     as_attachment=True,download_name=fname)
+
 
 
 @app.route('/api/tasks/<int:tid>/subtasks')

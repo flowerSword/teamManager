@@ -20,7 +20,7 @@ There is no test suite.
 
 ## Architecture
 
-This is a **single-file Flask application** (`app.py`, ~1544 lines) with a bundled SPA frontend (`static/index.html`, ~3378 lines).
+This is a **single-file Flask application** (`app.py`, ~1572 lines) with a bundled SPA frontend (`static/index.html`, ~3389 lines).
 
 **Storage:** SQLite at `data/teammanager.db`, created automatically on first run. Schema is defined and migrated inside `init_db()`. WAL mode and foreign keys are enabled on every connection.
 
@@ -43,7 +43,7 @@ This is a **single-file Flask application** (`app.py`, ~1544 lines) with a bundl
 
 **Auto-risk logic:** `auto_risk()` is called on every task create/update. A task past its `plan_end_date` is always force-flagged `has_risk=1` regardless of user choice. Otherwise, risk is only auto-computed when the user has manually set `has_risk=1`: flags within 1 day of `plan_end_date` with progress < 80%. A user-selected "no risk" is respected (not overridden) as long as the task isn't overdue.
 
-**Excel export:** Uses `openpyxl` (bundled). Export routes are `/api/export/checkin/<gn>` and `/api/export/tasks/<gn>`.
+**Excel export:** Uses `openpyxl` (bundled). Export routes are `/api/export/checkin/<gn>`, `/api/export/tasks/<gn>`, and `/api/export/overtime` (`year` + optional `month`; without `month` it produces one workbook with a sheet per month of that year, `wb.create_sheet` per month rather than reusing the default active sheet).
 
 ## Frontend Architecture
 
@@ -112,6 +112,7 @@ All routes are prefixed `/api/`. Key groupings:
 - `/api/myip` — returns client IP as seen by the server
 - `/api/export/checkin/<gn>` — Excel attendance export
 - `/api/export/tasks/<gn>` — Excel task export
+- `/api/export/overtime` — Excel overtime export; `month` given → single sheet for that month, omitted → one sheet per month (Jan-Dec) of `year`
 
 ## Key Conventions
 
