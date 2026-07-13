@@ -55,11 +55,11 @@ PORT=9000 python app.py
 ## 升级方式
 
 1. 停止当前运行的服务
-2. 替换 `app.py` 和 `static/index.html` 两个文件
+2. 替换 `app.py`、`server/` 目录、`static/` 目录（`data/` 和 `wheels/` 不要动）
 3. **保留** `data/teammanager.db`（数据库文件，升级不丢失任何数据）
 4. 重新启动服务
 
-数据库结构变更通过 `init_db()` 中的 `ALTER TABLE` 自动完成，无需手动迁移。
+数据库结构变更通过 `init_db()`（`server/db.py`）中的 `ALTER TABLE` 自动完成，新版 `app.py` 首次启动时会自动把旧数据库升级到位，无需手动迁移、无需额外工具。
 
 ---
 
@@ -221,6 +221,10 @@ PORT=9000 python app.py
 
 ## 版本更新记录
 
+### v1.13（2026-07-13）
+
+- **重构**：`app.py`/`static/index.html` 由单文件拆分为按功能/页面组织的多文件结构（后端 `server/` 包 + 前端 `static/js/`、`static/css/`），便于维护；不影响任何功能行为，升级方式相应调整为替换 `app.py`+`server/`+`static/`（见"升级方式"），数据库仍通过现有的自动 `ALTER TABLE` 机制无缝适配旧版本数据，无需额外迁移工具
+
 ### v1.12（2026-07-13）
 
 - **优化**：加班导出改为仅管理员可用；普通管理员固定只能导出本组数据，超级管理员可通过分组下拉多选，将多个组的数据合并导出到同一份 Excel（不选则导出全部组），导出内容新增"所属组"列
@@ -301,8 +305,8 @@ PORT=9000 python app.py
 
 ## 技术说明
 
-- **后端**：Python 3 + Flask，单文件 `app.py`（~1591 行）
-- **前端**：原生 JavaScript SPA，单文件 `static/index.html`（~3427 行），无构建步骤，无外部依赖
-- **数据库**：SQLite（WAL 模式 + 外键约束），文件位于 `data/teammanager.db`
+- **后端**：Python 3 + Flask，`app.py`（~27 行，仅作为启动入口）+ `server/` 包（按功能拆分为 `auth.py`/`members.py`/`checkin.py`/`tasks.py`/`dayplan.py`/`overtime.py`/`stats.py`/`config_routes.py` 等模块，通过 Flask Blueprint 注册，共约 1650 行）
+- **前端**：原生 JavaScript SPA，`static/index.html`（~77 行外壳）+ `static/css/style.css` + 按页面/功能拆分的 `static/js/*.js`（`core.js`/`dashboard.js`/`checkin.js`/`tasks.js`/`team.js`/`reports.js`/`dayplan.js`/`overtime.js` 等 14 个文件，共约 3350 行），均为普通 `<script>` 标签加载，无构建步骤、无 npm、无外部依赖
+- **数据库**：SQLite（WAL 模式 + 外键约束），文件位于 `data/teammanager.db`；结构变更通过 `init_db()` 的增量 `ALTER TABLE` 自动完成，旧数据库文件可直接被新版本读取升级
 - **依赖**：Flask、openpyxl 等全部内置于 `wheels/` 目录，运行无需联网
 - **密码**：客户端 SHA-256 加密后传输，服务端存储 SHA-256 哈希值

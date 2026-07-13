@@ -20,9 +20,19 @@ There is no test suite.
 
 ## Architecture
 
-This is a **single-file Flask application** (`app.py`, ~1591 lines) with a bundled SPA frontend (`static/index.html`, ~3427 lines).
+`app.py` (~27 lines) is a thin entry point only — it prepends `wheels/` to `sys.path`, then imports and runs the `server` package. All Flask routes/logic live in **`server/`**, a package of feature-based modules registered as Blueprints from `server/__init__.py:create_app()`. The frontend is split the same way: `static/index.html` is now a small shell (~77 lines) that loads `static/css/style.css` and a sequence of plain `static/js/<feature>.js` `<script>` tags — no bundler, no `npm install`, still zero build step. This split (both backend and frontend) happened in a refactor from an original single-file `app.py`/`index.html`; see "Backend file layout" and "Frontend file layout" below for what lives where.
 
-**Storage:** SQLite at `data/teammanager.db`, created automatically on first run. Schema is defined and migrated inside `init_db()`. WAL mode and foreign keys are enabled on every connection.
+**Storage:** SQLite at `data/teammanager.db`, created automatically on first run. Schema is defined and migrated inside `init_db()` (in `server/db.py`). WAL mode and foreign keys are enabled on every connection. Migrations are additive `ALTER TABLE` statements wrapped in bare `try/except: pass` — an old `data/teammanager.db` from a previous version is auto-upgraded in place the moment the new `app.py` starts; no manual migration step, no separate tool needed. Preserve this pattern for any future schema change instead of introducing a new migration mechanism.
+
+### Backend file layout (`server/`)
+
+- `db.py` — `DB_PATH`, `get_db()`/`close_db()` (per-request SQLite connection via Flask `g`), `hash_pw()`, `r2d()`/`rs()` row helpers, full schema + all migrations in `init_db()`, `seed_default_plan_templates()`.
+- `utils.py` — `today()`/`now_str()`/`workdays()`, `auto_risk()`, `STATUS_ZH`/`TYPE_ZH` label maps, `current_user()`, `login_required`/`admin_required` decorators, `LOCAL_IPV4`/`get_local_ipv4()`.
+- `excel.py` — shared `openpyxl` formatting helpers (`mkhdr`, `rf`, `title_cell`) used by every `/api/export/*` route.
+- `config_routes.py` — `/api/config`, `/api/myip`, plus `get_config()`/`set_config()`/`detect_status()` (the late-arrival threshold logic `checkin.py` depends on).
+- `auth.py`, `members.py`, `overtime.py`, `checkin.py`, `tasks.py`, `dayplan.py`, `stats.py` — one Blueprint per feature domain, routes unprefixed (full `/api/...` paths declared explicitly per route, mirroring the original).
+- Import direction is strictly one-way: blueprint modules import from `db.py`/`utils.py`/`excel.py`/`config_routes.py`; those never import a blueprint. No circular imports.
+- `wheels/` must be on `sys.path` **before** `server` is imported anywhere (Flask/openpyxl aren't pip-installed) — only `app.py` does this, so always run through `app.py`, never `python -m server` directly.
 
 **DB tables:**
 - `members` — users with role (`DEVELOPER`/`TESTER`/`LEADER`/`ADMIN`), group, `is_admin` flag, and `employee_no` (used by overtime requests)
@@ -39,7 +49,7 @@ This is a **single-file Flask application** (`app.py`, ~1591 lines) with a bundl
 
 **Access control:** Two decorators — `@login_required` and `@admin_required`. Non-admin users are scoped to their own `group_name` throughout most queries. Overtime records are the exception — `/api/overtime` returns all members' records for the month regardless of group, but edit/delete is restricted to the owner (or admin) and only while `locked=0`.
 
-**Check-in time gate:** Non-admin members cannot create a check-in for today before 04:00 server time (`checkin()` in `app.py`, member branch) — returns 403. Admin-entered check-ins (any date/time/status) are exempt.
+**Check-in time gate:** Non-admin members cannot create a check-in for today before 04:00 server time (`checkin()` in `server/checkin.py`, member branch) — returns 403. Admin-entered check-ins (any date/time/status) are exempt.
 
 **Auto-risk logic:** `auto_risk()` is called on every task create/update. A task past its `plan_end_date` is always force-flagged `has_risk=1` regardless of user choice. Otherwise, risk is only auto-computed when the user has manually set `has_risk=1`: flags within 1 day of `plan_end_date` with progress < 80%. A user-selected "no risk" is respected (not overridden) as long as the task isn't overdue.
 
@@ -47,7 +57,28 @@ This is a **single-file Flask application** (`app.py`, ~1591 lines) with a bundl
 
 ## Frontend Architecture
 
-`static/index.html` is a single-file vanilla JS SPA with no build step, no framework, and no external dependencies.
+Vanilla JS SPA, no build step, no framework, no external dependencies — now split across plain `<script src>` files instead of one inline block.
+
+### Frontend file layout (`static/js/`, loaded in this exact order from `index.html`)
+
+1. `core.js` — globals (`ME`, `PAGE`), `ICO` icon SVGs, `api()`/`GET`/`POST`/`PUT`/`DEL`, appearance/theme system, `toast`/`esc`/date helpers, status/type badge tables, pagination, `sha256hex()`, login/logout/`checkAuth()`, `initApp()`/`autoCheckIn()`, `buildNav()`/`showPage()`/`toggleViewMode()`, `openModal()`/`closeModal()`, the generic multi-select dropdown helper.
+2. `dashboard.js` — admin + member dashboard (`renderAdminDash`, `renderMemberDash`).
+3. `checkin.js` — `renderMyCi`, `renderCi` (admin check-in management).
+4. `tasks.js` — task list/modal/log-panel + the member's own Gantt page (`renderMyTasks`, `renderTasks`, `renderGantt`, etc.).
+5. `team.js` — `renderTeamView` (member read-only) + `renderTeam` (admin member CRUD page).
+6. `reports.js` — `renderReports` (report center, all tabs).
+7. `profile.js` — `renderProfile` (change password / self profile edit).
+8. `member-view.js` — `renderMemberView` (admin per-person task+log drill-down).
+9. `admin-gantt.js` — `renderAdminGantt` (multi-member Gantt).
+10. `dayplan.js` — `renderDayPlan`, templates, reminders.
+11. `overtime.js` — `renderOvertime`.
+12. `monthly.js` — `renderMonthly`.
+13. `help.js` — `renderHelp`.
+14. `boot.js` — **must load last**: just `initAppearance();checkAuth();`.
+
+**Why load order matters:** these are classical (non-`module`, non-`defer`) scripts, so they execute synchronously in the order they appear in `index.html`. Function declarations and top-level `let`/`const` in any file become available on `window` the instant that file finishes executing — cross-file references (e.g. `showPage()` in `core.js` calling `renderOvertime()` from `overtime.js`) work fine because by the time any of these are actually *called* (user interaction, or the final `checkAuth()` in `boot.js`), every file has already loaded. The one hard rule: nothing may be invoked at a script's own top level before its dependencies have loaded — that's why `boot.js` (which kicks off the whole app) is last. When adding a new page, add its file before `boot.js`; order among the other 12 doesn't matter.
+
+CSS lives in `static/css/style.css` (was previously an inline `<style>` block).
 
 **Key globals:**
 - `ME` — current user object (set after login)
@@ -116,11 +147,11 @@ All routes are prefixed `/api/`. Key groupings:
 
 ## Key Conventions
 
-- `r2d(row)` converts a `sqlite3.Row` to a dict; `rs(rows)` converts a list of rows.
-- `task_where(u)` builds a WHERE clause that scopes to `group_name` for non-admins and `1=1` for admins.
-- `can_edit(u, task)` returns True if the user is admin, the assignee, or the creator.
-- Migrations run inline in `init_db()` via `ALTER TABLE … ADD COLUMN` wrapped in bare `except: pass`.
-- The `wheels/` directory is prepended to `sys.path` at module load — never import from it explicitly.
+- `r2d(row)` (in `server/db.py`) converts a `sqlite3.Row` to a dict; `rs(rows)` converts a list of rows.
+- `task_where(u)` (local to `server/tasks.py`) builds a WHERE clause that scopes to `group_name` for non-admins and `1=1` for admins.
+- `can_edit(u, task)` (local to `server/tasks.py`) returns True if the user is admin, the assignee, or the creator.
+- Migrations run inline in `init_db()` (`server/db.py`) via `ALTER TABLE … ADD COLUMN` wrapped in bare `except: pass`.
+- The `wheels/` directory is prepended to `sys.path` in `app.py`, before the `server` package is imported — never import `server` (or `flask`/`openpyxl`) without that happening first.
 - Task type values: `REQUIREMENT`, `ISSUE`, `ONSITE`, `OTHER`.
 - Task status values: `PENDING`, `IN_PROGRESS`, `TESTING`, `DELIVERED`, `CANCELLED`, `OPEN`, `RESOLVED`, `CLOSED`, `REJECTED`, `ONGOING`, `COMPLETED`.
 - When a task is set to a completed status without `actual_end_date`, the backend auto-sets it to today and progress to 100.

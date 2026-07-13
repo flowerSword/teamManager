@@ -1,0 +1,1 @@
+initAppearance();checkAuth();

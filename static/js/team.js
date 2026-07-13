@@ -1,0 +1,119 @@
+// ════════════════════════════════════════════
+// TEAM VIEW (member read-only)
+// ════════════════════════════════════════════
+async function renderTeamView(){
+  document.getElementById('tb-title').textContent='团队视图';
+  document.getElementById('ct').innerHTML='<div style="color:var(--tx2);padding:60px;text-align:center">加载中...</div>';
+  const [tasks,members]=await Promise.all([GET('/tasks'),GET('/members/active')]);
+  const t=tasks||[], m=members||[];
+  const active=t.filter(x=>!['DELIVERED','COMPLETED','RESOLVED','CLOSED','CANCELLED','REJECTED'].includes(x.status));
+  const risk=t.filter(x=>x.has_risk&&!['DELIVERED','COMPLETED','RESOLVED','CLOSED','CANCELLED'].includes(x.status));
+  document.getElementById('ct').innerHTML=`
+  <div class="sgrid">
+    <div class="sc sc-blue"><div class="sl">团队成员</div><div class="sv">${m.filter(x=>!x.is_admin).length}</div></div>
+    <div class="sc sc-teal"><div class="sl">进行中任务</div><div class="sv">${active.length}</div></div>
+    <div class="sc sc-amber"><div class="sl">风险任务</div><div class="sv">${risk.length}</div></div>
+    <div class="sc sc-red"><div class="sl">问题单</div><div class="sv">${t.filter(x=>x.task_type==='ISSUE'&&['OPEN','IN_PROGRESS'].includes(x.status)).length}</div></div>
+  </div>
+  ${risk.length>0?`<div class="alert al-warn">⚠️ 团队有 ${risk.length} 个任务存在风险</div>`:''}
+  <div class="card">
+    <div class="card-hd"><div class="ctitle">进行中任务一览</div></div>
+    <div class="twrap"><table><thead><tr><th>任务</th><th>类型</th><th>负责人</th><th>状态</th><th>进度</th><th>截止</th></tr></thead><tbody>
+    ${active.slice(0,15).map(x=>`<tr ${x.assignee_id===ME.id||x.created_by===ME.id?'class="hi"':''}>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        ${x.assignee_id===ME.id||x.created_by===ME.id?'<span class="tag-me">我</span> ':''}
+        ${x.has_risk?'⚠️ ':''}${esc(x.title)}
+      </td>
+      <td>${tbadge(x.task_type)}</td>
+      <td>${esc(x.assignee_name||'')}</td>
+      <td>${sbadge(x.status)}</td>
+      <td style="min-width:80px"><div class="prog"><div class="pf" style="width:${x.progress||0}%;background:${x.has_risk?'var(--err)':'var(--pri)'}"></div></div><small style="color:var(--tx3)">${x.progress||0}%</small></td>
+      <td style="color:${x.plan_end_date&&x.plan_end_date<today()?'var(--err)':'inherit'}">${x.plan_end_date||'-'}</td>
+    </tr>`).join('')||'<tr><td colspan="6" class="empty">暂无进行中任务</td></tr>'}
+    </tbody></table></div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════
+// TEAM (admin)
+// ════════════════════════════════════════════
+let memPage=1;
+async function renderTeam(){
+  document.getElementById('tb-title').textContent='成员管理';
+  document.getElementById('ct').innerHTML=`
+  <div class="phd"><div class="ptitle">👥 成员管理</div>
+    <button class="btn btn-pri" onclick="openMemModal(null)">＋ 添加成员</button>
+  </div>
+  <div class="card"><div id="mem-tbl">加载中...</div></div>`;
+  loadTeam();
+}
+async function loadTeam(page){
+  memPage=page||memPage;
+  const all=await GET('/members')||[];
+  const {rows,page:p,pages}=paginate(all,memPage);
+  document.getElementById('mem-tbl').innerHTML=`
+  <table><thead><tr><th>姓名</th><th>用户名</th><th>工号</th><th>角色</th><th>所在组</th><th>权限</th><th>状态</th><th>操作</th></tr></thead><tbody>
+  ${rows.map(m=>`<tr>
+    <td><strong>${esc(m.name)}</strong></td><td style="color:var(--tx2)">${esc(m.username)}</td>
+    <td>${esc(m.employee_no||'')}</td>
+    <td><span class="bd bd-blue">${esc(m.role||'')}</span></td>
+    <td>${esc(m.group_name||'')}</td>
+    <td>${m.is_admin?'<span class="bd bd-purple">管理员</span>':'<span class="bd bd-gray">成员</span>'}</td>
+    <td>${m.is_active?'<span class="bd bd-green">在职</span>':'<span class="bd bd-red">停用</span>'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="openMemModal(${m.id})">编辑</button>
+      ${m.username!=='admin'?`<button class="btn btn-sm btn-err" onclick="delMem(${m.id})">停用</button>`:''}
+    </td>
+  </tr>`).join('')||'<tr><td colspan="8" class="empty">暂无成员</td></tr>'}
+  </tbody></table>${pgr(p,pages,'loadTeam')}`;
+}
+async function openMemModal(id){
+  let m={is_active:true,role:'DEVELOPER',group_name:ME.group_name};
+  if(id){const all=await GET('/members')||[];m=all.find(x=>x.id===id)||m;}
+  const groups=['研发一组','研发二组','测试组','产品组'];
+  const roles=['LEADER','DEVELOPER','TESTER','PM','DESIGNER','DEVOPS','OTHER'];
+  openModal(id?'编辑成员':'添加成员',`
+  <div class="frow c2">
+    <div class="fgroup"><label class="flabel">姓名 <span class="req">*</span></label><input id="mf-name" class="fi" value="${esc(m.name||'')}"></div>
+    <div class="fgroup"><label class="flabel">用户名 <span class="req">*</span></label><input id="mf-uname" class="fi" value="${esc(m.username||'')}"></div>
+  </div>
+  <div class="frow c2">
+    <div class="fgroup"><label class="flabel">${id?'重置密码（留空不改）':'初始密码（默认123456）'}</label><input id="mf-pw" class="fi" type="password"></div>
+    <div class="fgroup"><label class="flabel">邮箱</label><input id="mf-email" class="fi" value="${esc(m.email||'')}"></div>
+  </div>
+  <div class="frow c3">
+    <div class="fgroup"><label class="flabel">角色</label>
+      <select id="mf-role" class="fi">${roles.map(r=>`<option${m.role===r?' selected':''}>${r}</option>`).join('')}</select></div>
+    <div class="fgroup"><label class="flabel">所在组</label>
+      <select id="mf-gn" class="fi">${groups.map(g=>`<option${m.group_name===g?' selected':''}>${g}</option>`).join('')}</select></div>
+    <div class="fgroup"><label class="flabel">状态</label>
+      <select id="mf-active" class="fi"><option value="1" ${m.is_active!==false?'selected':''}>在职</option><option value="0" ${m.is_active===false?'selected':''}>停用</option></select></div>
+  </div>
+  <div class="frow c2">
+    <div class="fgroup"><label class="flabel">工号</label><input id="mf-empno" class="fi" value="${esc(m.employee_no||'')}"></div>
+    <div class="fgroup"><label class="flabel">管理员权限</label>
+      <select id="mf-admin" class="fi"><option value="0" ${!m.is_admin?'selected':''}>普通成员</option><option value="1" ${m.is_admin?'selected':''}>管理员</option></select></div>
+  </div>`,
+  async()=>{
+    const name=gv('mf-name'),username=gv('mf-uname');
+    if(!name||!username){toast('姓名用户名必填','err');return;}
+    const payload={name,username,email:gv('mf-email'),role:gv('mf-role'),group_name:gv('mf-gn'),
+      employee_no:gv('mf-empno'),
+      is_admin:gv('mf-admin')==='1',is_active:gv('mf-active')==='1'};
+    const pw=gv('mf-pw'); if(pw)payload.password=pw; else if(!id)payload.password='123456';
+    const res=id?await PUT('/members/'+id,payload):await POST('/members',payload);
+    if(res){toast(id?'更新成功':'添加成功');closeModal();loadTeam();}
+  });
+}
+async function delMem(id,hardDelete){
+  if(hardDelete){
+    if(!confirm('确认永久删除该成员？此操作不可恢复')) return;
+    var res=await fetch('/api/members/'+id+'/delete',{method:'DELETE'});
+    if(res.ok){toast('已永久删除');loadTeam();}
+    else{var d=await res.json();toast(d.error||'删除失败','err');}
+  }else{
+    if(!confirm('确认停用该成员？'))return;
+    await DEL('/members/'+id);toast('已停用');loadTeam();
+  }
+}
+
