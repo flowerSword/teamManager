@@ -1387,30 +1387,49 @@ def exp_tasks(gn):
                      as_attachment=True,download_name="{}_{}_{}_{}.xlsx".format(gn,tname,s,e))
 
 @app.route('/api/export/overtime')
-@login_required
+@admin_required
 def exp_overtime():
     """Export overtime records to Excel. With `month`: single-month, one sheet.
-    Without `month` (year only): whole year, one sheet per month (Jan-Dec)."""
+    Without `month` (year only): whole year, one sheet per month (Jan-Dec).
+    Group scope: 超级管理员(admin) may pass `groups` (comma-separated group names) to combine
+    selected groups into one file, or omit it to export all groups. 普通管理员 are always
+    locked to their own group_name, regardless of any `groups` param sent."""
+    u=current_user()
     yr=int(request.args.get('year',datetime.date.today().year))
     mo=request.args.get('month')
+    is_super=(u.get('username')=='admin')
+    if is_super:
+        raw_groups=[g.strip() for g in request.args.get('groups','').split(',') if g.strip()]
+        group_list=raw_groups  # empty = all groups
+        scope_label='全部组' if not group_list else '、'.join(group_list)
+    else:
+        group_list=[u.get('group_name') or '']
+        scope_label=u.get('group_name') or ''
     db=get_db()
-    headers=['工号','姓名','开始日期','开始时间','结束日期','结束时间','休息开始','休息结束','类型','理由','状态']
-    widths=[12,10,12,10,12,10,10,10,10,26,10]
+    headers=['所属组','工号','姓名','开始日期','开始时间','结束日期','结束时间','休息开始','休息结束','类型','理由','状态']
+    widths=[12,12,10,12,10,12,10,10,10,10,26,10]
     wb=Workbook(); wb.remove(wb.active)
     months=[int(mo)] if mo else list(range(1,13))
     for m in months:
         month_str="{}-{:02d}".format(yr,m)
-        rows=rs(db.execute("SELECT * FROM overtime_requests WHERE start_date LIKE ? ORDER BY start_date,id",(month_str+'%',)).fetchall())
+        sql="""SELECT o.*, m.group_name AS grp FROM overtime_requests o
+               JOIN members m ON m.id=o.member_id WHERE o.start_date LIKE ?"""
+        params=[month_str+'%']
+        if group_list:
+            sql+=" AND m.group_name IN ({})".format(','.join('?'*len(group_list)))
+            params+=group_list
+        sql+=" ORDER BY o.start_date,o.id"
+        rows=rs(db.execute(sql,params).fetchall())
         ws=wb.create_sheet(title="{}年{}月".format(yr,m))
-        title_cell(ws,"加班记录 {}年{}月".format(yr,m),len(headers))
+        title_cell(ws,"加班记录 {}年{}月（{}）".format(yr,m,scope_label),len(headers))
         mkhdr(ws,3,headers,widths)
         for r in rows:
-            ws.append([r.get('employee_no') or '',r.get('member_name') or '',r['start_date'],r['start_time'],
+            ws.append([r.get('grp') or '',r.get('employee_no') or '',r.get('member_name') or '',r['start_date'],r['start_time'],
                        r['end_date'],r['end_time'],r.get('rest_start_time') or '',r.get('rest_end_time') or '',
                        r.get('overtime_type') or '',r.get('reason') or '',
                        '已锁定' if r.get('locked') else '未锁定'])
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
-    fname="加班记录_{}-{:02d}.xlsx".format(yr,int(mo)) if mo else "加班记录_{}.xlsx".format(yr)
+    fname="加班记录_{}_{}-{:02d}.xlsx".format(scope_label,yr,int(mo)) if mo else "加班记录_{}_{}.xlsx".format(scope_label,yr)
     return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True,download_name=fname)
 

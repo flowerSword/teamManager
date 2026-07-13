@@ -2931,6 +2931,7 @@ async function delPlanTemplate(id){
 // OVERTIME MANAGEMENT
 // ════════════════════════════════════════════
 let otMonth=thisMonth(), otList=[], otEditId=null;
+let otExportGroups=[], otAllGroups=[];
 const OT_TYPES=['转加班费','转调休'];
 
 function nextSaturday(){
@@ -2942,12 +2943,22 @@ function nextSaturday(){
 
 async function renderOvertime(){
   document.getElementById('tb-title').textContent='加班管理';
+  const isSuperAdmin=ME.is_admin&&ME.username==='admin';
+  if(isSuperAdmin&&!otAllGroups.length){
+    const allM=await GET('/members/active')||[];
+    const seen={};otAllGroups=[];
+    allM.forEach(m=>{if(m.group_name&&!seen[m.group_name]){seen[m.group_name]=1;otAllGroups.push(m.group_name);}});
+    otAllGroups.sort();
+  }
   document.getElementById('ct').innerHTML=`
   <div class="phd">
     <div class="ptitle">🕒 加班管理</div>
-    <div style="display:flex;gap:7px;flex-wrap:wrap">
-      <button class="btn" onclick="exportOvertime('month')">📥 导出本月</button>
-      <button class="btn" onclick="exportOvertime('year')">📥 导出全年</button>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+      ${ME.is_admin?`
+        ${isSuperAdmin?'<div id="ot-group-filter"></div>':''}
+        <button class="btn" onclick="exportOvertime('month')">📥 导出本月</button>
+        <button class="btn" onclick="exportOvertime('year')">📥 导出全年</button>
+      `:''}
       <button class="btn btn-pri" onclick="openOvertimeModal(null)">＋ 申请加班</button>
     </div>
   </div>
@@ -2957,7 +2968,33 @@ async function renderOvertime(){
     </div>
     <div id="ot-tbl">加载中...</div>
   </div>`;
+  if(isSuperAdmin) renderOtGroupFilter();
   await loadOvertimeList();
+}
+
+function renderOtGroupFilter(){
+  const el=document.getElementById('ot-group-filter');
+  if(!el) return;
+  const wasOpen=document.getElementById('ot-group-dd')?.style.display==='block';
+  const label=otExportGroups.length?`已选${otExportGroups.length}组`:'全部组';
+  el.innerHTML=`<div class="ms-dd" style="position:relative;display:inline-block">
+    <button type="button" class="btn btn-sm" style="min-width:130px;text-align:left" onclick="toggleDropdown('ot-group-dd')">导出分组：${label} ▾</button>
+    <div id="ot-group-dd" class="ms-dd-panel" style="display:${wasOpen?'block':'none'};position:absolute;top:100%;left:0;margin-top:4px;z-index:20;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px;min-width:170px;max-height:260px;overflow:auto;box-shadow:0 4px 16px rgba(0,0,0,.25)">
+      ${otAllGroups.map(g=>
+        `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:4px 4px">
+          <input type="checkbox" value="${esc(g)}" ${otExportGroups.includes(g)?'checked':''} onchange="toggleOtExportGroup('${esc(g)}',this.checked)" style="accent-color:var(--pri)"> ${esc(g)}</label>`
+      ).join('')}
+      <div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+        <button type="button" class="btn btn-sm" onclick="otExportGroups=[];renderOtGroupFilter()">清空（全部组）</button>
+        <button type="button" class="btn btn-sm" onclick="document.getElementById('ot-group-dd').style.display='none'">完成</button>
+      </div>
+    </div>
+  </div>`;
+}
+function toggleOtExportGroup(g,checked){
+  if(checked){ if(!otExportGroups.includes(g)) otExportGroups.push(g); }
+  else { otExportGroups=otExportGroups.filter(x=>x!==g); }
+  renderOtGroupFilter();
 }
 
 async function loadOvertimeList(){
@@ -3062,7 +3099,8 @@ async function toggleOvertimeLock(id,locked){
 
 async function exportOvertime(mode){
   const [y,m]=otMonth.split('-');
-  const url=mode==='year'?`/api/export/overtime?year=${y}`:`/api/export/overtime?year=${y}&month=${parseInt(m)}`;
+  let url=mode==='year'?`/api/export/overtime?year=${y}`:`/api/export/overtime?year=${y}&month=${parseInt(m)}`;
+  if(ME.is_admin&&ME.username==='admin'&&otExportGroups.length) url+=`&groups=${encodeURIComponent(otExportGroups.join(','))}`;
   const blob=await fetch(url).then(r=>r.blob());
   dlBlob(blob,mode==='year'?`加班记录_${y}年.xlsx`:`加班记录_${y}年${m}月.xlsx`);
 }

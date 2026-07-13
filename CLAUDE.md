@@ -20,7 +20,7 @@ There is no test suite.
 
 ## Architecture
 
-This is a **single-file Flask application** (`app.py`, ~1572 lines) with a bundled SPA frontend (`static/index.html`, ~3389 lines).
+This is a **single-file Flask application** (`app.py`, ~1591 lines) with a bundled SPA frontend (`static/index.html`, ~3427 lines).
 
 **Storage:** SQLite at `data/teammanager.db`, created automatically on first run. Schema is defined and migrated inside `init_db()`. WAL mode and foreign keys are enabled on every connection.
 
@@ -43,7 +43,7 @@ This is a **single-file Flask application** (`app.py`, ~1572 lines) with a bundl
 
 **Auto-risk logic:** `auto_risk()` is called on every task create/update. A task past its `plan_end_date` is always force-flagged `has_risk=1` regardless of user choice. Otherwise, risk is only auto-computed when the user has manually set `has_risk=1`: flags within 1 day of `plan_end_date` with progress < 80%. A user-selected "no risk" is respected (not overridden) as long as the task isn't overdue.
 
-**Excel export:** Uses `openpyxl` (bundled). Export routes are `/api/export/checkin/<gn>`, `/api/export/tasks/<gn>`, and `/api/export/overtime` (`year` + optional `month`; without `month` it produces one workbook with a sheet per month of that year, `wb.create_sheet` per month rather than reusing the default active sheet).
+**Excel export:** Uses `openpyxl` (bundled). Export routes are `/api/export/checkin/<gn>`, `/api/export/tasks/<gn>`, and `/api/export/overtime` (`year` + optional `month`; without `month` it produces one workbook with a sheet per month of that year, `wb.create_sheet` per month rather than reusing the default active sheet). `/api/export/overtime` is `@admin_required` (unlike the checkin/task exports, which are `@login_required` + manual group check): a 普通管理员's export is force-scoped to `u['group_name']` (any `groups` param they send is ignored server-side), while the super admin (`username=='admin'`) may pass a comma-separated `groups` param to merge specific groups into one file, or omit it for all groups — resolved via a `JOIN members` on `overtime_requests.member_id` since that table has no `group_name` column of its own.
 
 ## Frontend Architecture
 
@@ -112,7 +112,7 @@ All routes are prefixed `/api/`. Key groupings:
 - `/api/myip` — returns client IP as seen by the server
 - `/api/export/checkin/<gn>` — Excel attendance export
 - `/api/export/tasks/<gn>` — Excel task export
-- `/api/export/overtime` — Excel overtime export; `month` given → single sheet for that month, omitted → one sheet per month (Jan-Dec) of `year`
+- `/api/export/overtime` — Excel overtime export, admin-only; `month` given → single sheet for that month, omitted → one sheet per month (Jan-Dec) of `year`; regular admins are locked to their own group, super admin can pass `groups` to combine specific groups or omit for all
 
 ## Key Conventions
 
