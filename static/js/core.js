@@ -111,8 +111,13 @@ function toast(msg,type='ok'){
   setTimeout(()=>el.remove(),3000);
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-function today(){return new Date().toISOString().slice(0,10)}
-function thisMonth(){return new Date().toISOString().slice(0,7)}
+function pad2(n){return String(n).padStart(2,'0')}
+// Local calendar date as YYYY-MM-DD. Deliberately NOT toISOString().slice(0,10) —
+// that's UTC-based and returns the wrong (previous) date for any positive-UTC-offset
+// timezone (e.g. UTC+8) during local 00:00-08:00, which broke early-morning check-in.
+function toLocalDateStr(d){return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())}
+function today(){return toLocalDateStr(new Date())}
+function thisMonth(){const d=new Date();return d.getFullYear()+'-'+pad2(d.getMonth()+1)}
 function yearStart(){return new Date().getFullYear()+'-01'}
 function gv(id){return document.getElementById(id)?.value||''}
 function sv(id,v){const el=document.getElementById(id);if(el)el.value=v||''}

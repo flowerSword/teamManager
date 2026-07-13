@@ -10,7 +10,7 @@ let currentGroup='';
 
 function getYesterday(){
   var d=new Date(); d.setDate(d.getDate()-1);
-  return d.toISOString().slice(0,10);
+  return toLocalDateStr(d);
 }
 // 生成日期高亮按钮（点击切换，激活时蓝色）
 function makeHlBtn(label, dateStr){
@@ -189,7 +189,7 @@ function buildDayHeaders(start, totalDays, dayStep, agMonth){
   let hdrs='';
   for(let d=0;d<totalDays;d+=dayStep){
     const dt=new Date(start); dt.setDate(dt.getDate()+d);
-    const isToday=dt.toISOString().slice(0,10)===today();
+    const isToday=toLocalDateStr(dt)===today();
     const lbl=agMonth?dt.getDate():(dt.getMonth()+1)+'/'+dt.getDate();
     hdrs+=`<div class="gantt-day${isToday?' today':''}" style="flex:${dayStep};min-width:${agMonth?'18px':'22px'}">${lbl}</div>`;
   }

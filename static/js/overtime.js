@@ -9,7 +9,7 @@ function nextSaturday(){
   const d=new Date();
   const diff=(6-d.getDay()+7)%7;
   d.setDate(d.getDate()+diff);
-  return d.toISOString().slice(0,10);
+  return toLocalDateStr(d);
 }
 
 async function renderOvertime(){

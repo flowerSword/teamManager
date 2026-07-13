@@ -390,7 +390,7 @@ async function loadGantt(){
   let dayHdrs='';
   for(let d=0;d<totalDays;d+=dayStep){
     const dt=new Date(startDate); dt.setDate(dt.getDate()+d);
-    const isToday=dt.toISOString().slice(0,10)===today();
+    const isToday=toLocalDateStr(dt)===today();
     const lbl=ganttMonth?dt.getDate():(dt.getMonth()+1)+'/'+dt.getDate();
     dayHdrs+=`<div class="gantt-day${isToday?' today':''}" style="flex:${dayStep};min-width:${ganttMonth?'20px':'24px'}">${lbl}</div>`;
   }
