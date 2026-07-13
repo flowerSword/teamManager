@@ -51,6 +51,8 @@ There is no test suite.
 
 **Check-in time gate:** Non-admin members cannot create a check-in for today before 04:00 server time (`checkin()` in `server/checkin.py`, member branch) — returns 403. Admin-entered check-ins (any date/time/status) are exempt.
 
+**Progress-log backdating limit:** `add_log()` in `server/tasks.py` rejects `log_date` older than `today - 3 days` for non-admins (400). Admins are exempt and can backfill any historical date.
+
 **Auto-risk logic:** `auto_risk()` is called on every task create/update. A task past its `plan_end_date` is always force-flagged `has_risk=1` regardless of user choice. Otherwise, risk is only auto-computed when the user has manually set `has_risk=1`: flags within 1 day of `plan_end_date` with progress < 80%. A user-selected "no risk" is respected (not overridden) as long as the task isn't overdue.
 
 **Excel export:** Uses `openpyxl` (bundled). Export routes are `/api/export/checkin/<gn>`, `/api/export/tasks/<gn>`, and `/api/export/overtime` (`year` + optional `month`; without `month` it produces one workbook with a sheet per month of that year, `wb.create_sheet` per month rather than reusing the default active sheet). `/api/export/overtime` is `@admin_required` (unlike the checkin/task exports, which are `@login_required` + manual group check): a 普通管理员's export is force-scoped to `u['group_name']` (any `groups` param they send is ignored server-side), while the super admin (`username=='admin'`) may pass a comma-separated `groups` param to merge specific groups into one file, or omit it for all groups — resolved via a `JOIN members` on `overtime_requests.member_id` since that table has no `group_name` column of its own.
@@ -72,7 +74,7 @@ Vanilla JS SPA, no build step, no framework, no external dependencies — now sp
 9. `admin-gantt.js` — `renderAdminGantt` (multi-member Gantt).
 10. `dayplan.js` — `renderDayPlan`, templates, reminders.
 11. `overtime.js` — `renderOvertime`.
-12. `monthly.js` — `renderMonthly`.
+12. `progress.js` — `renderProgress` (进展记录: day/week/month/year timeline of the current user's own task-progress logs; replaced the old `monthly.js` monthly-calendar page).
 13. `help.js` — `renderHelp`.
 14. `boot.js` — **must load last**: just `initAppearance();checkAuth();`.
 
@@ -121,7 +123,7 @@ All routes are prefixed `/api/`. Key groupings:
 - `/api/tasks/mine` — current user's tasks
 - `/api/tasks/risk` — tasks with `has_risk=1` or past deadline
 - `/api/tasks/today_todo` — tasks spanning today (active, not completed)
-- `/api/tasks/monthly_view` — tasks active in a month with daily log counts
+- `/api/tasks/progress` — the current user's own task-progress-log timeline for an arbitrary `[start,end]` date range (`sort=asc|desc`); always self-scoped, no `member_id` param — returns raw sorted `logs` plus `byType`/`byDate` pivot aggregates. Powers the day/week/month/year "进展记录" page (granularity and range navigation are computed client-side; the backend only knows about a plain date range)
 - `/api/tasks/gantt` — Gantt for a single member
 - `/api/tasks/gantt_multi` — Gantt for multiple members (admin)
 - `/api/tasks/by_member` — tasks grouped by member with logs attached (admin)
@@ -144,6 +146,7 @@ All routes are prefixed `/api/`. Key groupings:
 - `/api/export/checkin/<gn>` — Excel attendance export
 - `/api/export/tasks/<gn>` — Excel task export
 - `/api/export/overtime` — Excel overtime export, admin-only; `month` given → single sheet for that month, omitted → one sheet per month (Jan-Dec) of `year`; regular admins are locked to their own group, super admin can pass `groups` to combine specific groups or omit for all
+- `/api/export/progress` — Excel export of the current user's own progress logs for `[start,end]`; two sheets (raw log list + by-task-type pivot), same self-scoping as `/api/tasks/progress`
 
 ## Key Conventions
 

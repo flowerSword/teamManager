@@ -268,7 +268,7 @@ function buildNav(){
   var adminMenus=[
     {k:'dash',l:'总览',i:'dash'},{k:'ci',l:'签到管理',i:'ci'},
     {k:'tasks',l:'任务管理',i:'task'},{k:'member-view',l:'成员视图',i:'team'},
-    {k:'admin-gantt',l:'甘特图',i:'gantt'},{k:'monthly',l:'月度日历',i:'task'},
+    {k:'admin-gantt',l:'甘特图',i:'gantt'},{k:'progress',l:'进展记录',i:'task'},
     {k:'day-plan',l:'每日计划',i:'task'},{k:'overtime',l:'加班管理',i:'ci'},
     {k:'team',l:'成员管理',i:'team'},{k:'reports',l:'报表中心',i:'rpt'},
     {k:'help',l:'操作说明',i:'rpt'}
@@ -276,7 +276,7 @@ function buildNav(){
   var memberMenus=[
     {k:'dash',l:'我的工作台',i:'dash'},{k:'my-ci',l:'我的签到',i:'ci'},
     {k:'my-tasks',l:'我的任务',i:'task'},{k:'gantt',l:'甘特图',i:'gantt'},
-    {k:'monthly',l:'月度日历',i:'task'},{k:'day-plan',l:'每日计划',i:'task'},
+    {k:'progress',l:'进展记录',i:'task'},{k:'day-plan',l:'每日计划',i:'task'},
     {k:'overtime',l:'加班管理',i:'ci'},
     {k:'team-view',l:'团队视图',i:'team'},
     {k:'reports',l:'报表中心',i:'rpt'},{k:'help',l:'操作说明',i:'rpt'}
@@ -308,11 +308,11 @@ function showPage(name){
   var isAdminView=ME.is_admin&&VIEW_MODE==='admin';
   var map=isAdminView?{
     dash:renderAdminDash,ci:renderCi,tasks:renderTasks,team:renderTeam,reports:renderReports,
-    profile:renderProfile,'member-view':renderMemberView,'admin-gantt':renderAdminGantt,monthly:renderMonthly,
+    profile:renderProfile,'member-view':renderMemberView,'admin-gantt':renderAdminGantt,progress:renderProgress,
     'day-plan':renderDayPlan,overtime:renderOvertime,help:renderHelp
   }:{
     dash:renderMemberDash,'my-ci':renderMyCi,'my-tasks':renderMyTasks,gantt:renderGantt,
-    'team-view':renderTeamView,profile:renderProfile,monthly:renderMonthly,'day-plan':renderDayPlan,
+    'team-view':renderTeamView,profile:renderProfile,progress:renderProgress,'day-plan':renderDayPlan,
     overtime:renderOvertime,help:renderHelp,
     reports:renderReports
   };

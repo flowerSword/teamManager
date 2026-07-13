@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tasks: CRUD, progress logs, Gantt, monthly view, stats, and Excel export."""
+"""Tasks: CRUD, progress logs (incl. the day/week/month/year progress timeline), Gantt, stats, and Excel export."""
 import io, datetime, calendar
 from flask import Blueprint, request, jsonify, send_file
 from openpyxl import Workbook
@@ -183,6 +183,10 @@ def add_log(tid):
     content=d.get('content','').strip()
     if not content: return jsonify({'error':'进展内容不能为空'}),400
     log_date=d.get('log_date',today())
+    if not u['is_admin']:
+        min_date=(datetime.date.today()-datetime.timedelta(days=3)).isoformat()
+        if log_date<min_date:
+            return jsonify({'error':'进展日期不能早于3天前，如需补录历史进展请联系管理员'}),400
     new_prog=d.get('progress'); new_stat=d.get('status')
     try: hours=max(0.0,float(d.get('hours') or 0))
     except (TypeError,ValueError): hours=0.0
@@ -305,56 +309,66 @@ def today_todo():
     return jsonify(rows)
 
 
-@tasks_bp.route('/api/tasks/monthly_view')
+@tasks_bp.route('/api/tasks/progress')
 @login_required
-def monthly_view():
-    """Monthly task view: tasks active in the month, with daily log counts."""
+def progress_view():
+    """The current user's own task-progress log timeline (day/week/month/year
+    browsing is a client-side concern — the caller just picks a [start,end] range).
+    Always scoped to self; no cross-member viewing (by design)."""
     u = current_user(); db = get_db()
-    yr = int(request.args.get('year', datetime.date.today().year))
-    mo = int(request.args.get('month', datetime.date.today().month))
-    member_ids = request.args.get('member_ids','')
-    s = "{}-{:02d}-01".format(yr,mo)
-    e = "{}-{:02d}-{:02d}".format(yr,mo,calendar.monthrange(yr,mo)[1])
-    days_in_month = calendar.monthrange(yr,mo)[1]
-    mids = [int(x) for x in member_ids.split(',') if x.strip().isdigit()] if member_ids else []
-    if u['is_admin']:
-        gn = request.args.get('group_name', u['group_name'])
-        if not mids:
-            rows = rs(db.execute("SELECT id FROM members WHERE group_name=? AND is_active=1",(gn,)).fetchall())
-            mids = [r['id'] for r in rows]
-        # Query by member IDs (more reliable than group_name on tasks table)
-        if mids:
-            placeholders = ','.join('?' * len(mids))
-            where = "(assignee_id IN ({}) OR created_by IN ({})) AND status NOT IN ('CANCELLED','REJECTED')".format(placeholders, placeholders)
-            params = mids + mids
-        else:
-            where = "group_name=? AND status NOT IN ('CANCELLED','REJECTED')"
-            params = [gn]
-    else:
-        where = "(assignee_id=? OR created_by=?) AND status NOT IN ('CANCELLED','REJECTED')"
-        params = [u['id'],u['id']]
-    all_tasks = rs(db.execute("SELECT * FROM tasks WHERE {} ORDER BY assignee_name".format(where),params).fetchall())
-    # No need to filter by mids again - already handled in WHERE clause
-    # Filter: keep tasks that overlap with the month OR have logs in the month
-    tasks = []
-    for t in all_tasks:
-        ps = t.get('plan_start_date') or ''
-        pe = t.get('plan_end_date') or ''
-        # 1. Overlaps with month range
-        overlaps = (not ps or ps <= e) and (not pe or pe >= s)
-        # 2. Or has logs in the month
-        has_logs = db.execute("SELECT 1 FROM task_logs WHERE task_id=? AND log_date>=? AND log_date<=? LIMIT 1",
-                              (t['id'], s, e)).fetchone() is not None
-        if overlaps or has_logs:
-            tasks.append(t)
-    for task in tasks:
-        logs = rs(db.execute("SELECT log_date,content,progress_snapshot,member_name FROM task_logs WHERE task_id=? AND log_date>=? AND log_date<=? ORDER BY log_date",(task['id'],s,e)).fetchall())
-        by_date = {}
-        for l in logs:
-            by_date.setdefault(l['log_date'],[]).append(l)
-        task['logs_by_date'] = by_date
-    all_dates = ["{}-{:02d}-{:02d}".format(yr,mo,d) for d in range(1,days_in_month+1)]
-    return jsonify({'tasks':tasks,'dates':all_dates,'year':yr,'month':mo})
+    start = request.args.get('start') or today()
+    end = request.args.get('end') or start
+    order = 'ASC' if request.args.get('sort')=='asc' else 'DESC'
+    rows = rs(db.execute("""SELECT l.*,t.title as task_title,t.task_type FROM task_logs l
+        JOIN tasks t ON l.task_id=t.id
+        WHERE l.member_id=? AND l.log_date>=? AND l.log_date<=?
+        ORDER BY l.log_date {0},l.id {0}""".format(order),(u['id'],start,end)).fetchall())
+    by_type={}; by_date={}; total_hours=0.0
+    for r in rows:
+        h=r.get('hours') or 0.0
+        total_hours+=h
+        by_type[r['task_type']]=by_type.get(r['task_type'],0.0)+h
+        by_date[r['log_date']]=by_date.get(r['log_date'],0.0)+h
+    return jsonify({
+        'start':start,'end':end,'logs':rows,
+        'totalHours':round(total_hours,2),'totalLogs':len(rows),
+        'byType':{k:round(v,2) for k,v in by_type.items()},
+        'byDate':{k:round(v,2) for k,v in by_date.items()},
+    })
+
+
+@tasks_bp.route('/api/export/progress')
+@login_required
+def exp_progress():
+    """Export the current user's own progress logs for [start,end] to Excel:
+    a raw sorted log sheet + a by-task-type pivot summary sheet."""
+    u=current_user(); db=get_db()
+    start = request.args.get('start') or today()
+    end = request.args.get('end') or start
+    order = 'ASC' if request.args.get('sort')=='asc' else 'DESC'
+    rows = rs(db.execute("""SELECT l.*,t.title as task_title,t.task_type FROM task_logs l
+        JOIN tasks t ON l.task_id=t.id
+        WHERE l.member_id=? AND l.log_date>=? AND l.log_date<=?
+        ORDER BY l.log_date {0},l.id {0}""".format(order),(u['id'],start,end)).fetchall())
+    wb=Workbook()
+    ws=wb.active; ws.title="进展明细"
+    title_cell(ws,"{} 进展记录（{} ~ {}）".format(u['name'],start,end),8)
+    mkhdr(ws,3,['日期','任务标题','类型','进度','状态','工时','内容','记录时间'],[12,32,10,8,10,8,44,18])
+    for r in rows:
+        ws.append([r['log_date'],r.get('task_title') or '',TYPE_ZH.get(r.get('task_type',''),''),
+                   "{}%".format(r['progress_snapshot']) if r.get('progress_snapshot') is not None else '',
+                   STATUS_ZH.get(r.get('status_snapshot',''),r.get('status_snapshot') or ''),
+                   r.get('hours') or 0,r.get('content') or '',r.get('created_at') or ''])
+    by_type={}
+    for r in rows: by_type[r['task_type']]=by_type.get(r['task_type'],0.0)+(r.get('hours') or 0.0)
+    ws2=wb.create_sheet(title="分类汇总")
+    title_cell(ws2,"按事务类型汇总工时",2)
+    mkhdr(ws2,3,['事务类型','工时（小时）'],[16,16])
+    for k,v in by_type.items():
+        ws2.append([TYPE_ZH.get(k,k),round(v,2)])
+    buf=io.BytesIO(); wb.save(buf); buf.seek(0)
+    return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                     as_attachment=True,download_name="{}_进展记录_{}_{}.xlsx".format(u['name'],start,end))
 
 
 @tasks_bp.route('/api/export/tasks/<gn>')
