@@ -173,7 +173,7 @@ function renderDpGrid(){
     <td>${st?`<div style="display:flex;gap:4px">
       <input class="fi" type="number" min="0" max="100" style="width:65px" placeholder="进度%" value="${s.progress!=null?s.progress:''}" onchange="dpSlots[${i}].progress=this.value?parseInt(this.value):null">
       <input class="fi" type="number" min="0" step="0.5" style="width:65px" placeholder="工时h" value="${s.hours||''}" onchange="dpSlots[${i}].hours=parseFloat(this.value)||0">
-    </div>`:''}</td>
+    </div>${st.progress!=null?`<div style="font-size:11px;color:var(--tx2);margin-top:3px">当前任务进度：${st.progress}%</div>`:''}`:''}</td>
     <td><input type="checkbox" ${s.completed?'checked':''} onchange="toggleDpSlotComplete(${i},this.checked)"></td>
     <td><button class="btn btn-sm btn-err" onclick="removeDpSlot(${i})">删</button></td>
   </tr>`;
