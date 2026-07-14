@@ -42,10 +42,52 @@ async function renderTeam(){
   document.getElementById('tb-title').textContent='成员管理';
   document.getElementById('ct').innerHTML=`
   <div class="phd"><div class="ptitle">👥 成员管理</div>
-    <button class="btn btn-pri" onclick="openMemModal(null)">＋ 添加成员</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn" onclick="openGroupManager()">🏷️ 分组管理</button>
+      <button class="btn btn-pri" onclick="openMemModal(null)">＋ 添加成员</button>
+    </div>
   </div>
   <div class="card"><div id="mem-tbl">加载中...</div></div>`;
   loadTeam();
+}
+
+// ── 分组管理 ─────────────────────────────────
+async function openGroupManager(){
+  await renderGroupManagerBody();
+}
+async function renderGroupManagerBody(){
+  const groups=await GET('/groups')||[];
+  const row=g=>`<div style="display:flex;gap:6px;align-items:center;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
+    <input class="fi" id="grp-name-${g.id}" value="${esc(g.name)}" style="flex:1">
+    <span style="font-size:12px;color:var(--tx3);white-space:nowrap">${g.member_count} 人</span>
+    <button class="btn btn-sm" onclick="saveGroupRename(${g.id})">保存</button>
+    <button class="btn btn-sm btn-err" ${g.member_count>0?'disabled title="分组下还有成员，无法删除"':''} onclick="delGroup(${g.id})">删除</button>
+  </div>`;
+  const body=`<div style="display:flex;flex-direction:column">
+    ${groups.length?groups.map(row).join(''):'<div class="empty">暂无分组</div>'}
+    <div style="display:flex;gap:6px;margin-top:4px">
+      <input class="fi" id="grp-new-name" placeholder="新分组名称" style="flex:1">
+      <button class="btn btn-pri btn-sm" onclick="addGroup()">＋ 新增分组</button>
+    </div>
+  </div>`;
+  openModal('🏷️ 分组管理',body,closeModal,true);
+}
+async function addGroup(){
+  const name=gv('grp-new-name');
+  if(!name){toast('请输入分组名称','err');return;}
+  const res=await POST('/groups',{name});
+  if(res){toast('添加成功');renderGroupManagerBody();}
+}
+async function saveGroupRename(id){
+  const name=gv('grp-name-'+id);
+  if(!name){toast('分组名称不能为空','err');return;}
+  const res=await PUT('/groups/'+id,{name});
+  if(res){toast('保存成功');renderGroupManagerBody();loadTeam();}
+}
+async function delGroup(id){
+  if(!confirm('确认删除该分组？'))return;
+  await DEL('/groups/'+id);
+  toast('已删除');renderGroupManagerBody();
 }
 async function loadTeam(page){
   memPage=page||memPage;
@@ -69,8 +111,11 @@ async function loadTeam(page){
 }
 async function openMemModal(id){
   let m={is_active:true,role:'DEVELOPER',group_name:ME.group_name};
+  const groupsReq=GET('/groups');
   if(id){const all=await GET('/members')||[];m=all.find(x=>x.id===id)||m;}
-  const groups=['研发一组','研发二组','测试组','产品组'];
+  const groupRows=await groupsReq||[];
+  const groups=groupRows.map(g=>g.name);
+  if(m.group_name&&!groups.includes(m.group_name)) groups.push(m.group_name);
   const roles=['LEADER','DEVELOPER','TESTER','PM','DESIGNER','DEVOPS','OTHER'];
   openModal(id?'编辑成员':'添加成员',`
   <div class="frow c2">

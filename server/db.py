@@ -159,6 +159,11 @@ CREATE TABLE IF NOT EXISTS plan_reminders (
     status TEXT DEFAULT 'PENDING',
     created_at TEXT DEFAULT (datetime('now','localtime'))
 );
+CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
 CREATE INDEX IF NOT EXISTS idx_ci ON check_ins(member_id, check_date);
 CREATE INDEX IF NOT EXISTS idx_tg ON tasks(group_name);
 CREATE INDEX IF NOT EXISTS idx_ta ON tasks(assignee_id);
@@ -245,5 +250,16 @@ CREATE INDEX IF NOT EXISTS idx_ot ON overtime_requests(member_id, start_date);
                 seed_default_plan_templates(db, row[0])
             db.execute("INSERT OR IGNORE INTO system_config(key,value) VALUES('seeded_default_plan_templates','1')")
             db.commit()
+    except: pass
+    # Migration: seed built-in groups (once) + self-heal any group_name in use that's missing a groups row
+    try:
+        seeded = db.execute("SELECT value FROM system_config WHERE key='seeded_default_groups'").fetchone()
+        if not seeded:
+            for gname in ('研发一组','研发二组','测试组','产品组'):
+                db.execute("INSERT OR IGNORE INTO groups(name) VALUES(?)", (gname,))
+            db.execute("INSERT OR IGNORE INTO system_config(key,value) VALUES('seeded_default_groups','1')")
+        for row in db.execute("SELECT DISTINCT group_name FROM members WHERE group_name IS NOT NULL AND group_name!=''").fetchall():
+            db.execute("INSERT OR IGNORE INTO groups(name) VALUES(?)", (row[0],))
+        db.commit()
     except: pass
     db.close()

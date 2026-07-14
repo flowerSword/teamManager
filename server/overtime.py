@@ -3,11 +3,53 @@
 import io, datetime
 from flask import Blueprint, request, jsonify, send_file
 from openpyxl import Workbook
+from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from .db import get_db, r2d, rs
 from .utils import today, now_str, current_user, login_required, admin_required
-from .excel import mkhdr, title_cell
 
 overtime_bp = Blueprint('overtime', __name__)
+
+# Column layout mirrors the corporate overtime-registration template
+# (overtime_registration.xlsx): 10 columns, no extra fields.
+_OT_NOTE = '绿色区域为制度区域，茶色区与为表单区域；*标记字段为必填项，请勿改动模板格式'
+_OT_HEADERS = [
+    '*工号(8位)\nEmployee ID(8bit)', '姓名\nEmployee Name',
+    '*开始日期\nStart Date\n(YYYY/MM/DD)', '*开始时间\nStart Time\n(HH:MM)',
+    '*结束日期\nEnd Date\n(YYYY/MM/DD)', '*结束时间\nEnd Time\n(HH:MM)',
+    '休息开始时间\nBreak Start Time\n(HH:MM)', '休息结束时间\nBreak End Time\n(HH:MM)',
+    '*加班类型\nOvertime Type', '加班理由',
+]
+_OT_WIDTHS = [18, 16, 18, 14, 18, 14, 18, 18, 38.06640625, 20]
+# Maps our overtime_type value to the exact option text used by the corporate template's 加班类型 column
+_OT_TYPE_MAP = {'转加班费': 'CN_Overtime/转加班费', '转调休': 'CN_Overtime_for_Replacement_Leave/转调休'}
+_THIN = Side(style='thin')
+_OT_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+
+
+def _ot_sheet(wb, title):
+    ws = wb.create_sheet(title=title)
+    fill = PatternFill('solid', fgColor='C6EFCE')
+    hdr_font = Font(name='宋体', bold=True, size=11)
+    center_wrap = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    ws.merge_cells('B1:I1')
+    ws['A1'] = '说明'; ws['B1'] = _OT_NOTE
+    ws['A1'].fill = fill; ws['A1'].font = hdr_font; ws['A1'].alignment = center_wrap; ws['A1'].border = _OT_BORDER
+    ws['B1'].fill = fill; ws['B1'].alignment = Alignment(horizontal='left', vertical='center'); ws['B1'].border = _OT_BORDER
+    for i, h in enumerate(_OT_HEADERS, 1):
+        c = ws.cell(row=2, column=i, value=h)
+        c.fill = fill; c.font = hdr_font; c.alignment = center_wrap; c.border = _OT_BORDER
+        ws.column_dimensions[get_column_letter(i)].width = _OT_WIDTHS[i-1]
+    ws.row_dimensions[2].height = 52.05
+    return ws
+
+
+def _ot_row(ws, row_idx, values):
+    font = Font(name='Arial', size=10)
+    align = Alignment(horizontal='center', vertical='center')
+    for i, v in enumerate(values, 1):
+        c = ws.cell(row=row_idx, column=i, value=v)
+        c.font = font; c.alignment = align; c.border = _OT_BORDER
 
 
 def _can_edit_overtime(u, row):
@@ -107,8 +149,6 @@ def exp_overtime():
         group_list=[u.get('group_name') or '']
         scope_label=u.get('group_name') or ''
     db=get_db()
-    headers=['所属组','工号','姓名','开始日期','开始时间','结束日期','结束时间','休息开始','休息结束','类型','理由','状态']
-    widths=[12,12,10,12,10,12,10,10,10,10,26,10]
     wb=Workbook(); wb.remove(wb.active)
     months=[int(mo)] if mo else list(range(1,13))
     for m in months:
@@ -121,14 +161,16 @@ def exp_overtime():
             params+=group_list
         sql+=" ORDER BY o.start_date,o.id"
         rows=rs(db.execute(sql,params).fetchall())
-        ws=wb.create_sheet(title="{}年{}月".format(yr,m))
-        title_cell(ws,"加班记录 {}年{}月（{}）".format(yr,m,scope_label),len(headers))
-        mkhdr(ws,3,headers,widths)
-        for r in rows:
-            ws.append([r.get('grp') or '',r.get('employee_no') or '',r.get('member_name') or '',r['start_date'],r['start_time'],
-                       r['end_date'],r['end_time'],r.get('rest_start_time') or '',r.get('rest_end_time') or '',
-                       r.get('overtime_type') or '',r.get('reason') or '',
-                       '已锁定' if r.get('locked') else '未锁定'])
+        ws=_ot_sheet(wb, "{}年{}月加班".format(str(yr)[-2:],m))
+        for i,r in enumerate(rows, start=3):
+            _ot_row(ws, i, [
+                r.get('employee_no') or '', r.get('member_name') or '',
+                (r['start_date'] or '').replace('-','/'), r['start_time'],
+                (r['end_date'] or '').replace('-','/'), r['end_time'],
+                r.get('rest_start_time') or '', r.get('rest_end_time') or '',
+                _OT_TYPE_MAP.get(r.get('overtime_type'), r.get('overtime_type') or ''),
+                r.get('reason') or '',
+            ])
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
     fname="加班记录_{}_{}-{:02d}.xlsx".format(scope_label,yr,int(mo)) if mo else "加班记录_{}_{}.xlsx".format(scope_label,yr)
     return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

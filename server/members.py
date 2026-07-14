@@ -75,6 +75,58 @@ def del_member(mid):
     db.execute("UPDATE members SET is_active=0 WHERE id=?",(mid,)); db.commit(); return '',204
 
 
+@members_bp.route('/api/groups')
+@login_required
+def list_groups():
+    db=get_db()
+    rows=rs(db.execute("""SELECT g.id,g.name,
+        (SELECT COUNT(*) FROM members m WHERE m.group_name=g.name) AS member_count
+        FROM groups g ORDER BY g.id""").fetchall())
+    return jsonify(rows)
+
+
+@members_bp.route('/api/groups', methods=['POST'])
+@admin_required
+def add_group():
+    d=request.json or {}; name=(d.get('name') or '').strip(); db=get_db()
+    if not name: return jsonify({'error':'分组名称不能为空'}),400
+    if db.execute("SELECT 1 FROM groups WHERE name=?",(name,)).fetchone():
+        return jsonify({'error':'分组已存在'}),400
+    c=db.execute("INSERT INTO groups(name) VALUES(?)",(name,)); db.commit()
+    return jsonify({'id':c.lastrowid,'name':name,'member_count':0}),201
+
+
+@members_bp.route('/api/groups/<int:gid>', methods=['PUT'])
+@admin_required
+def rename_group(gid):
+    d=request.json or {}; name=(d.get('name') or '').strip(); db=get_db()
+    row=db.execute("SELECT * FROM groups WHERE id=?",(gid,)).fetchone()
+    if not row: return '',404
+    if not name: return jsonify({'error':'分组名称不能为空'}),400
+    if name!=row['name'] and db.execute("SELECT 1 FROM groups WHERE name=?",(name,)).fetchone():
+        return jsonify({'error':'分组已存在'}),400
+    old=row['name']
+    db.execute("UPDATE groups SET name=? WHERE id=?",(name,gid))
+    if name!=old:
+        db.execute("UPDATE members SET group_name=? WHERE group_name=?",(name,old))
+        db.execute("UPDATE tasks SET group_name=? WHERE group_name=?",(name,old))
+    db.commit()
+    cnt=db.execute("SELECT COUNT(*) FROM members WHERE group_name=?",(name,)).fetchone()[0]
+    return jsonify({'id':gid,'name':name,'member_count':cnt})
+
+
+@members_bp.route('/api/groups/<int:gid>', methods=['DELETE'])
+@admin_required
+def del_group(gid):
+    db=get_db()
+    row=db.execute("SELECT * FROM groups WHERE id=?",(gid,)).fetchone()
+    if not row: return '',404
+    cnt=db.execute("SELECT COUNT(*) FROM members WHERE group_name=?",(row['name'],)).fetchone()[0]
+    if cnt>0: return jsonify({'error':'该分组下还有成员，无法删除'}),400
+    db.execute("DELETE FROM groups WHERE id=?",(gid,)); db.commit()
+    return '',204
+
+
 @members_bp.route('/api/members/<int:mid>/delete', methods=['DELETE'])
 @admin_required
 def hard_del_member(mid):
