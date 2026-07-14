@@ -188,6 +188,11 @@ async function toggleDpSlotComplete(i,checked){
     if(dpSlots[i].progress!=null&&dpSlots[i].progress!=='') payload.progress=dpSlots[i].progress;
     if(dpSlots[i].hours) payload.hours=dpSlots[i].hours;
     await POST('/tasks/'+dpSlots[i].task_id+'/logs',payload);
+    if(payload.progress!=null){
+      const t=dpMyTasksCache.find(x=>String(x.id)===String(dpSlots[i].task_id));
+      if(t) t.progress=parseInt(payload.progress);
+      renderDpGrid();
+    }
     toast('已同步到任务进展');
   }
   await saveDayPlan();
