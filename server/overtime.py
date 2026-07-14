@@ -24,7 +24,7 @@ _OT_HEADERS = [
 ]
 _OT_WIDTHS = [18, 16, 18, 14, 18, 14, 18, 18, 38.06640625, 20]
 # Maps our overtime_type value to the exact option text used by the corporate template's 加班类型 column
-_OT_TYPE_MAP = {'转加班费': 'CN_Overtime/转加班费', '转调休': 'CN_Overtime_for_Replacement_Leave/转调休'}
+_OT_TYPE_MAP = {'转加班费': 'CN_Overtime/转加班费', '转调休': 'CN_Overtime for Replacement Leave/转调休'}
 _THIN = Side(style='thin')
 _OT_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 _OT_GREEN = 'FFC6EFCE'   # 制度区域 (system area, e.g. A1/row2 headers) - ARGB, FF alpha required or openpyxl writes it transparent
