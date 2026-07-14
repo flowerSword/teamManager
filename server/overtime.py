@@ -5,6 +5,8 @@ from flask import Blueprint, request, jsonify, send_file
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
 from .db import get_db, r2d, rs
 from .utils import today, now_str, current_user, login_required, admin_required
 
@@ -25,20 +27,44 @@ _OT_WIDTHS = [18, 16, 18, 14, 18, 14, 18, 18, 38.06640625, 20]
 _OT_TYPE_MAP = {'转加班费': 'CN_Overtime/转加班费', '转调休': 'CN_Overtime_for_Replacement_Leave/转调休'}
 _THIN = Side(style='thin')
 _OT_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+_OT_GREEN = 'FFC6EFCE'   # 制度区域 (system area, e.g. A1/row2 headers) - ARGB, FF alpha required or openpyxl writes it transparent
+_OT_TAN = 'FFFCD5B5'     # 表单区域 (form area, e.g. B1:J1 note banner) - template's Accent6/Lighter-60% theme tint
+_HDR_FONT_KW = dict(name='宋体', bold=True, size=11)
+_HDR_INLINE_KW = dict(rFont='宋体', b=True, sz=11)
+
+
+def _hdr_value(text):
+    """Header cell value with the leading '*' (required-field marker) rendered in red, matching the template."""
+    if not text.startswith('*'):
+        return text
+    return CellRichText(
+        TextBlock(InlineFont(color='FFFF0000', **_HDR_INLINE_KW), '*'),
+        TextBlock(InlineFont(**_HDR_INLINE_KW), text[1:]),
+    )
 
 
 def _ot_sheet(wb, title):
     ws = wb.create_sheet(title=title)
-    fill = PatternFill('solid', fgColor='C6EFCE')
-    hdr_font = Font(name='宋体', bold=True, size=11)
+    green = PatternFill('solid', fgColor=_OT_GREEN)
+    tan = PatternFill('solid', fgColor=_OT_TAN)
+    hdr_font = Font(**_HDR_FONT_KW)
+    note_font = Font(name='宋体', bold=False, size=11)
     center_wrap = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    bottom_only = Border(bottom=_THIN)
+
+    ws['A1'] = '说明'
+    ws['A1'].fill = green; ws['A1'].font = hdr_font; ws['A1'].alignment = center_wrap; ws['A1'].border = _OT_BORDER
+
     ws.merge_cells('B1:I1')
-    ws['A1'] = '说明'; ws['B1'] = _OT_NOTE
-    ws['A1'].fill = fill; ws['A1'].font = hdr_font; ws['A1'].alignment = center_wrap; ws['A1'].border = _OT_BORDER
-    ws['B1'].fill = fill; ws['B1'].alignment = Alignment(horizontal='left', vertical='center'); ws['B1'].border = _OT_BORDER
+    ws['B1'] = _OT_NOTE
+    ws['B1'].fill = tan; ws['B1'].font = note_font; ws['B1'].alignment = Alignment(horizontal='left')
+    for col in 'BCDEFGHI':
+        ws[col+'1'].border = bottom_only
+    ws['J1'].fill = tan; ws['J1'].font = note_font
+
     for i, h in enumerate(_OT_HEADERS, 1):
-        c = ws.cell(row=2, column=i, value=h)
-        c.fill = fill; c.font = hdr_font; c.alignment = center_wrap; c.border = _OT_BORDER
+        c = ws.cell(row=2, column=i, value=_hdr_value(h))
+        c.fill = green; c.font = hdr_font; c.alignment = center_wrap; c.border = _OT_BORDER
         ws.column_dimensions[get_column_letter(i)].width = _OT_WIDTHS[i-1]
     ws.row_dimensions[2].height = 52.05
     return ws
