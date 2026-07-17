@@ -95,12 +95,12 @@ function renderReminderManagerBody(){
     const leftLabel=r.status==='DONE'?'<span style="color:var(--tx3)">已完成</span>':
       left<0?`<span style="color:#f87171">已逾期 ${Math.abs(left)} 天</span>`:
       left===0?'<span style="color:#f87171">今天截止</span>':`<span style="color:var(--tx3)">还剩 ${left} 天</span>`;
-    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
-      <div style="min-width:0">
-        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.content)}</div>
-        <div style="font-size:12px;color:var(--tx3)">截止 ${r.due_date} · 提前 ${r.remind_days} 天提醒 · ${leftLabel}</div>
+    return `<div class="reminder-row${r.status==='DONE'?' is-done':''}">
+      <div class="rr-main">
+        <div class="rr-content">${esc(r.content)}</div>
+        <div class="rr-meta">截止 ${r.due_date} · 提前 ${r.remind_days} 天提醒 · ${leftLabel}</div>
       </div>
-      <span style="display:flex;gap:6px;flex-shrink:0">
+      <span class="rr-actions">
         ${r.status==='PENDING'?`<button class="btn btn-sm" onclick="markReminderDoneInMgr(${r.id})">✓ 完成</button>`:`<button class="btn btn-sm" onclick="reopenReminder(${r.id})">↺ 恢复</button>`}
         <button class="btn btn-sm" onclick="openReminderEditor(${r.id})">编辑</button>
         <button class="btn btn-sm btn-err" onclick="delPlanReminder(${r.id})">删除</button>
@@ -109,8 +109,8 @@ function renderReminderManagerBody(){
   };
   const body=`<div style="display:flex;flex-direction:column">
     ${pending.length?pending.map(row).join(''):'<div class="empty">暂无待办提醒</div>'}
-    ${done.length?`<div style="margin-top:10px;font-size:12px;color:var(--tx3)">已完成</div>${done.map(row).join('')}`:''}
-    <button class="btn btn-pri" style="margin-top:4px" onclick="openReminderEditor(null)">＋ 新建提醒</button>
+    ${done.length?`<details class="reminder-done-toggle"><summary>已完成 (${done.length})</summary>${done.map(row).join('')}</details>`:''}
+    <button class="btn btn-pri" style="margin-top:10px" onclick="openReminderEditor(null)">＋ 新建提醒</button>
   </div>`;
   openModal('⏰ 提醒事项（截止日/待办）',body,closeModal,true);
 }
@@ -204,7 +204,7 @@ function removeDpSlot(i){ dpSlots.splice(i,1); renderDpGrid(); }
 // ── 关联任务选择器（支持按状态/交付月份/标题关键字搜索）──────
 let dpPickIdx=null, dpPickStatus='', dpPickMonth='', dpPickKw='';
 function openDpTaskPicker(i){
-  dpPickIdx=i; dpPickStatus=''; dpPickMonth=''; dpPickKw='';
+  dpPickIdx=i; dpPickStatus=''; dpPickMonth=today().slice(0,7); dpPickKw='';
   const statusOpts=[...new Set(dpMyTasksCache.map(t=>t.status))];
   const body=`<div class="frow c3" style="margin-bottom:8px">
     <div class="fgroup"><label class="flabel">状态</label>
@@ -212,7 +212,7 @@ function openDpTaskPicker(i){
         <option value="">全部状态</option>${statusOpts.map(s=>`<option value="${s}">${SZ[s]||s}</option>`).join('')}
       </select></div>
     <div class="fgroup"><label class="flabel">交付月份</label>
-      <input id="dpp-month" class="fi" type="month" onchange="dpPickMonth=this.value;renderDpPickList()"></div>
+      <input id="dpp-month" class="fi" type="month" value="${dpPickMonth}" onchange="dpPickMonth=this.value;renderDpPickList()"></div>
     <div class="fgroup"><label class="flabel">标题关键字</label>
       <input id="dpp-kw" class="fi" placeholder="模糊搜索标题" oninput="dpPickKw=this.value;renderDpPickList()"></div>
   </div>
@@ -271,21 +271,21 @@ async function loadDpHistoryList(){
   if(!el) return;
   el.innerHTML='加载中...';
   const list=await GET('/plan/history?month='+dpHistMonth)||[];
-  el.innerHTML=list.length?list.map(d=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid var(--border);cursor:pointer" onclick="previewDpDate('${d.plan_date}')">
-    <span>${d.plan_date}${d.plan_date===today()?' <span class="tag-me">今天</span>':''}</span>
-    <span style="color:var(--tx3);font-size:12px">${d.slot_count} 个时间段 ›</span>
-  </div>`).join(''):'<div class="empty">该月暂无历史计划记录</div>';
+  el.innerHTML=list.length?`<div class="dp-hist-list">${list.map(d=>`<div class="dp-hist-item" onclick="previewDpDate('${d.plan_date}')">
+    <span class="dp-hist-date">${d.plan_date}${d.plan_date===today()?' <span class="tag-me">今天</span>':''}</span>
+    <span class="dp-hist-count">${d.slot_count} 个时间段 ›</span>
+  </div>`).join('')}</div>`:'<div class="empty">该月暂无历史计划记录</div>';
 }
 async function previewDpDate(dt){
   const res=await GET('/plan/day/'+dt)||{slots:[]};
   const slots=res.slots||[];
   const body=`<button class="btn btn-sm" style="margin-bottom:10px" onclick="openDpHistory()">← 返回列表</button>
-  ${slots.length?`<div style="display:flex;flex-direction:column;gap:8px">
+  ${slots.length?`<div class="dp-hist-slots">
     ${slots.map(s=>{
       const t=dpMyTasksCache.find(x=>String(x.id)===String(s.task_id));
-      return `<div style="display:flex;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;align-items:center">
-        <div style="font-weight:700;min-width:100px;color:var(--pri)">${s.start_time||''}~${s.end_time||''}</div>
-        <div style="flex:1">${esc(s.content||'')}</div>
+      return `<div class="dp-hist-slot">
+        <div class="dp-hist-slot-time">${s.start_time||''}~${s.end_time||''}</div>
+        <div class="dp-hist-slot-content">${esc(s.content||'')}</div>
         ${t?`<span class="bd bd-blue" style="flex-shrink:0">${esc(t.title)}</span>`:''}
       </div>`;
     }).join('')}

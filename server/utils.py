@@ -53,7 +53,7 @@ STATUS_ZH={'PENDING':'待处理','IN_PROGRESS':'进行中','TESTING':'测试中'
            'DELIVERED':'已交付','CANCELLED':'已取消','OPEN':'待处理',
            'RESOLVED':'已解决','CLOSED':'已关闭','REJECTED':'已拒绝',
            'ONGOING':'进行中','COMPLETED':'已完成'}
-TYPE_ZH={'REQUIREMENT':'需求','ISSUE':'问题单','ONSITE':'现场支撑','OTHER':'其他事务'}
+TYPE_ZH={'REQUIREMENT':'需求','ISSUE':'问题单','ONSITE':'现场支撑','OTHER':'其他事务','QUALITY':'质量深耕'}
 
 
 def current_user():

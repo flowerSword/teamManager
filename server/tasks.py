@@ -161,7 +161,7 @@ def del_task(tid):
     existing=r2d(db.execute("SELECT * FROM tasks WHERE id=?",(tid,)).fetchone())
     if not existing: return ('',404)
     if not u['is_admin'] and existing.get('created_by')!=u['id']: return jsonify({'error':'只能删除自己创建的任务'}),403
-    db.execute("DELETE FROM tasks WHERE id=?",(tid,)); db.commit(); return '',204
+    db.execute("DELETE FROM tasks WHERE id=? OR parent_task_id=?",(tid,tid)); db.commit(); return '',204
 
 
 # ── Task Logs ─────────────────────────────────────────────────

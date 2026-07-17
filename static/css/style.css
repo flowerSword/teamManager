@@ -206,6 +206,36 @@ textarea.fi{resize:vertical;min-height:64px}
 .ttab{padding:6px 14px;border-radius:7px;font-size:13px;cursor:pointer;color:var(--tx2);border:none;background:none;transition:all .15s}
 .ttab.active{background:var(--pri);color:#fff}
 
+/* DAY PLAN: reminders & history */
+.reminder-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 10px;
+  border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--s2);transition:background .15s}
+.reminder-row:hover{background:var(--s3)}
+.reminder-row.is-done{opacity:.68}
+.reminder-row .rr-main{min-width:0}
+.reminder-row .rr-content{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.reminder-row .rr-meta{font-size:12px;color:var(--tx3);margin-top:2px}
+.reminder-row .rr-actions{display:flex;gap:6px;flex-shrink:0}
+.reminder-done-toggle{margin-top:10px}
+.reminder-done-toggle summary{cursor:pointer;font-size:12px;color:var(--tx3);padding:6px 2px;
+  list-style:none;display:flex;align-items:center;gap:5px;user-select:none}
+.reminder-done-toggle summary::-webkit-details-marker{display:none}
+.reminder-done-toggle summary::before{content:'▸';font-size:10px;transition:transform .15s}
+.reminder-done-toggle[open] summary::before{transform:rotate(90deg)}
+.reminder-done-toggle summary:hover{color:var(--tx2)}
+
+.dp-hist-list{display:flex;flex-direction:column;gap:6px}
+.dp-hist-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;
+  border:1px solid var(--border);border-radius:9px;cursor:pointer;background:var(--s2);transition:background .15s,border-color .15s}
+.dp-hist-item:hover{background:var(--s3);border-color:var(--border2)}
+.dp-hist-date{font-weight:700;font-size:13px}
+.dp-hist-count{font-size:11px;color:var(--tx2);background:var(--s3);padding:2px 8px;border-radius:20px;white-space:nowrap}
+.dp-hist-slots{display:flex;flex-direction:column;gap:8px}
+.dp-hist-slot{display:flex;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:9px;
+  align-items:center;background:var(--s2)}
+.dp-hist-slot-time{font-weight:700;min-width:96px;color:var(--pri);font-size:12px;background:rgba(var(--bg-rgb),.35);
+  padding:3px 8px;border-radius:20px;text-align:center}
+.dp-hist-slot-content{flex:1;font-size:13px}
+
 /* APPEARANCE / BG IMAGE */
 body.has-bg-img{background-size:cover!important;background-attachment:fixed!important;background-repeat:no-repeat!important;background-position:center!important}
 body.has-bg-img .sb{background:rgba(var(--bg-rgb),.88)!important;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}

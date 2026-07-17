@@ -16,7 +16,7 @@ async function api(path,opts={}){
   try{
     const r=await fetch('/api'+path,{headers:{'Content-Type':'application/json'},...opts});
     if(r.status===401){showLogin();return null;}
-    if(r.status===204) return null;
+    if(r.status===204) return true;
     const ct=r.headers.get('content-type')||'';
     if(ct.includes('json')){
       const d=await r.json();
@@ -129,12 +129,12 @@ const SZ={PENDING:'待处理',IN_PROGRESS:'进行中',TESTING:'测试中',DELIVE
 const SC={PENDING:'bd-gray',IN_PROGRESS:'bd-blue',TESTING:'bd-amber',DELIVERED:'bd-green',
   CANCELLED:'bd-gray',OPEN:'bd-amber',RESOLVED:'bd-green',CLOSED:'bd-gray',REJECTED:'bd-red',
   ONGOING:'bd-teal',COMPLETED:'bd-green'};
-const TZ={REQUIREMENT:'需求',ISSUE:'问题单',ONSITE:'现场支撑',OTHER:'其他事务'};
-const TC={REQUIREMENT:'bd-blue',ISSUE:'bd-red',ONSITE:'bd-teal',OTHER:'bd-purple'};
+const TZ={REQUIREMENT:'需求',ISSUE:'问题单',ONSITE:'现场支撑',OTHER:'其他事务',QUALITY:'质量深耕'};
+const TC={REQUIREMENT:'bd-blue',ISSUE:'bd-red',ONSITE:'bd-teal',OTHER:'bd-purple',QUALITY:'bd-green'};
 const SEV={LOW:'bd-gray',MEDIUM:'bd-blue',HIGH:'bd-amber',CRITICAL:'bd-red'};
 function taskStatusesFor(type){
   return type==='ISSUE'?['OPEN','IN_PROGRESS','RESOLVED','CLOSED','REJECTED']:
-    (type==='REQUIREMENT'?['PENDING','IN_PROGRESS','TESTING','DELIVERED','CANCELLED']:
+    (type==='REQUIREMENT'||type==='QUALITY'?['PENDING','IN_PROGRESS','TESTING','DELIVERED','CANCELLED']:
      ['PENDING','ONGOING','COMPLETED','CANCELLED']);
 }
 const PRI={LOW:'bd-gray',MEDIUM:'bd-blue',HIGH:'bd-amber',CRITICAL:'bd-red'};

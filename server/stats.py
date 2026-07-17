@@ -25,12 +25,12 @@ def delivery_stats():
     member_ids_param = request.args.get('member_ids', '')  # "1,2,3" or ""
 
     db = get_db()
-    # Base query: REQUIREMENT tasks in range
+    # Base query: REQUIREMENT/QUALITY tasks in range
     if u['is_admin']:
-        base = "task_type='REQUIREMENT' AND group_name=?"
+        base = "task_type IN ('REQUIREMENT','QUALITY') AND group_name=?"
         params = [gn]
     else:
-        base = "task_type='REQUIREMENT' AND group_name=?"
+        base = "task_type IN ('REQUIREMENT','QUALITY') AND group_name=?"
         params = [gn]
 
     if start: base += " AND delivery_month>=?"; params.append(start)

@@ -28,7 +28,7 @@ async function renderReports(){
       +groups.map(function(g){var a=g===gn?'background:var(--pri);color:#fff;border-color:var(--pri)':'';return '<button class="btn btn-sm" style="'+a+'" onclick="currentGroup=\''+g+'\';renderReports()">'+g+'</button>';}).join('')
       +'</div>'):'';
   }
-  var tabBtns=[['DELIVERY','交付排名'],['REQUIREMENT','需求'],['ISSUE','问题单'],['ONSITE','现场支撑'],['OTHER','其他'],['TIMELOG','工时统计'],['CI','签到']].map(function(tb){
+  var tabBtns=[['DELIVERY','交付排名'],['REQUIREMENT','需求'],['ISSUE','问题单'],['ONSITE','现场支撑'],['OTHER','其他'],['QUALITY','质量深耕'],['TIMELOG','工时统计'],['CI','签到']].map(function(tb){
     return '<button class="ttab'+(rptTab===tb[0]?' active':'')+'" id="rtab-'+tb[0]+'" onclick="switchRptTab(\''+tb[0]+'\')">'+tb[1]+'</button>';
   }).join('');
   document.getElementById('ct').innerHTML=
@@ -115,7 +115,7 @@ async function loadRpt(){
     const params=`member_id=${rptTimeMember}&startMonth=${rptTimeStart}&endMonth=${rptTimeEnd}`;
     const data=await GET(`/stats/timelog?${params}`);if(!data)return;
     const byTask=data.byTask||[], byType=data.byType||{}, byDate=data.byDate||{};
-    const TYPE_COLORS={REQUIREMENT:'#3b82f6',ISSUE:'#ef4444',ONSITE:'#06b6d4',OTHER:'#8b5cf6'};
+    const TYPE_COLORS={REQUIREMENT:'#3b82f6',ISSUE:'#ef4444',ONSITE:'#06b6d4',OTHER:'#8b5cf6',QUALITY:'#22c55e'};
     const maxTaskHours=Math.max(1,...byTask.map(t=>t.hours));
     const typeTotal=Object.values(byType).reduce((a,b)=>a+b,0)||1;
     const dateEntries=Object.entries(byDate).sort((a,b)=>a[0]<b[0]?-1:1);

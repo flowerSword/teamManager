@@ -21,7 +21,7 @@ function renderTaskList(isAdmin){
     </div>
   </div>
   <div class="ttabs">
-    ${[['REQUIREMENT','需求'],['ISSUE','问题单'],['ONSITE','现场支撑'],['OTHER','其他事务']].map(([t,l])=>`
+    ${[['REQUIREMENT','需求'],['ISSUE','问题单'],['ONSITE','现场支撑'],['OTHER','其他事务'],['QUALITY','质量深耕']].map(([t,l])=>`
       <button class="ttab${taskTab===t?' active':''}" onclick="taskTab='${t}';taskPage=1;loadTaskTable(${isAdmin})">${l}</button>`).join('')}
   </div>
   <div id="task-stats" class="sgrid" style="grid-template-columns:repeat(4,1fr)"></div>
@@ -106,6 +106,7 @@ function renderTaskRows(isAdmin){
   if(taskTab==='REQUIREMENT') cols=`<th>需求单号</th><th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
   else if(taskTab==='ISSUE') cols=`<th>问题单号</th><th>严重度</th><th>负责人</th><th>状态</th><th>计划解决</th><th>超期</th>`;
   else if(taskTab==='ONSITE') cols=`<th>地点</th><th>负责人</th><th>状态</th><th>开始</th><th>结束</th>`;
+  else if(taskTab==='QUALITY') cols=`<th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
   else cols=`<th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th>`;
   document.getElementById('task-table').innerHTML=`
   <table><thead><tr><th>标题</th>${cols}<th>操作</th></tr></thead><tbody>
@@ -122,6 +123,11 @@ function renderTaskRows(isAdmin){
       <td style="color:${t.plan_end_date&&t.plan_end_date<today()&&!['RESOLVED','CLOSED'].includes(t.status)?'var(--err)':'inherit'}">${t.plan_end_date||'-'}</td>
       <td>${t.plan_end_date&&t.plan_end_date<today()&&!['RESOLVED','CLOSED','REJECTED'].includes(t.status)?'<span class="bd bd-red">超期</span>':''}`;
     else if(taskTab==='ONSITE') cells=`<td>${esc(t.location||'')}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td><td>${t.plan_start_date||'-'}</td><td>${t.plan_end_date||'-'}`;
+    else if(taskTab==='QUALITY') cells=`<td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
+      <td style="min-width:80px"><div class="prog"><div class="pf" style="width:${t.progress||0}%;background:${t.has_risk?'var(--err)':'var(--pri)'}"></div></div><small style="color:var(--tx3)">${t.progress||0}%</small></td>
+      <td style="color:${t.plan_end_date&&t.plan_end_date<today()&&t.status!=='DELIVERED'?'var(--err)':'inherit'}">${t.plan_end_date||'-'}</td>
+      <td>${t.delivery_month||'-'}</td>
+      <td>${t.has_risk&&!['DELIVERED','CANCELLED'].includes(t.status)?`<span style="color:var(--warn);font-size:11px">⚠ ${esc((t.risk_description||'').slice(0,12))}</span>`:'<span style="color:var(--tx3)">正常</span>'}`;
     else cells=`<td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
       <td><div class="prog"><div class="pf" style="width:${t.progress||0}%;background:var(--pri)"></div></div><small style="color:var(--tx3)">${t.progress||0}%</small></td>
       <td>${t.plan_end_date||'-'}`;
@@ -176,6 +182,7 @@ async function openTaskModal(id){
       <option value="ISSUE"${t.task_type==='ISSUE'?' selected':''}>问题单</option>
       <option value="ONSITE"${t.task_type==='ONSITE'?' selected':''}>现场支撑</option>
       <option value="OTHER"${t.task_type==='OTHER'?' selected':''}>其他事务</option>
+      <option value="QUALITY"${t.task_type==='QUALITY'?' selected':''}>质量深耕</option>
     </select></div>
   <div id="tf-no-wrap">${taskNoFieldHtml(t.task_type,t)}</div>
   <div class="frow c3">
@@ -262,7 +269,9 @@ function updateTaskFormType(type){
 
 async function delTask(id){
   if(!confirm('确认删除？'))return;
-  await DEL('/tasks/'+id);toast('已删除');
+  const ok=await DEL('/tasks/'+id);
+  if(!ok)return;
+  toast('已删除');
   ME.is_admin?loadTaskTable(true):loadTaskTable(false);
 }
 async function exportTasks(){
@@ -304,7 +313,7 @@ async function openLogPanel(tid){
             <div class="fgroup"><label class="flabel">更新状态（可选）</label>
               <select id="lg-status" class="fi"><option value="">不更改</option>
                 ${(task.task_type==='ISSUE'?['OPEN','IN_PROGRESS','RESOLVED','CLOSED']:
-                   task.task_type==='REQUIREMENT'?['PENDING','IN_PROGRESS','TESTING','DELIVERED']:
+                   task.task_type==='REQUIREMENT'||task.task_type==='QUALITY'?['PENDING','IN_PROGRESS','TESTING','DELIVERED']:
                    ['PENDING','ONGOING','COMPLETED']).map(s=>`<option value="${s}">${SZ[s]||s}</option>`).join('')}
               </select></div>
           </div>
@@ -449,7 +458,7 @@ async function loadGantt(){
     dayHdrs+=`<div class="gantt-day${isToday?' today':''}" style="flex:${dayStep};min-width:${ganttMonth?'20px':'24px'}">${lbl}</div>`;
   }
 
-  const COLORS={'REQUIREMENT':'#1d4ed8','ISSUE':'#b91c1c','ONSITE':'#0e7490','OTHER':'#6d28d9'};
+  const COLORS={'REQUIREMENT':'#1d4ed8','ISSUE':'#b91c1c','ONSITE':'#0e7490','OTHER':'#6d28d9','QUALITY':'#15803d'};
 
   const rows=tasks.map(t=>{
     const ts=new Date(t.plan_start_date), te=new Date(t.plan_end_date);

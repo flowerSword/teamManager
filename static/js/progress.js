@@ -91,8 +91,8 @@ async function loadProgress(){
 function renderProgPivot(){
   const el=document.getElementById('prog-pivot');
   if(!el) return;
-  const TYPE_SC={REQUIREMENT:'sc-blue',ISSUE:'sc-red',ONSITE:'sc-teal',OTHER:'sc-purple'};
-  const types=['REQUIREMENT','ISSUE','ONSITE','OTHER'];
+  const TYPE_SC={REQUIREMENT:'sc-blue',ISSUE:'sc-red',ONSITE:'sc-teal',OTHER:'sc-purple',QUALITY:'sc-green'};
+  const types=['REQUIREMENT','ISSUE','ONSITE','OTHER','QUALITY'];
   el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0">
     <div class="sc sc-slate" style="text-align:center;padding:14px">
       <div style="font-size:22px;font-weight:800">${progData.totalHours}</div>
