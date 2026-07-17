@@ -82,12 +82,23 @@ def _can_edit_overtime(u, row):
     return (not row['locked']) and (u['is_admin'] or row['member_id']==u['id'])
 
 
+def _can_view_overtime(u, row):
+    return u['is_admin'] or row['member_id']==u['id']
+
+
+# Attachments are stored as BLOBs in overtime_attachments (not on disk) so the
+# whole data/teammanager.db file remains the single thing that needs copying on upgrade.
+ALLOWED_ATTACHMENT_TYPES = {'image/png','image/jpeg','image/jpg','image/gif','image/webp','image/bmp'}
+MAX_ATTACHMENT_SIZE = 8*1024*1024  # 8MB per file
+
+
 @overtime_bp.route('/api/overtime')
 @login_required
 def list_overtime():
     db=get_db()
     month=request.args.get('month') or today()[:7]
-    rows=rs(db.execute("SELECT * FROM overtime_requests WHERE start_date LIKE ? ORDER BY start_date,id",(month+'%',)).fetchall())
+    rows=rs(db.execute("""SELECT o.*, (SELECT COUNT(*) FROM overtime_attachments a WHERE a.overtime_id=o.id) AS attachment_count
+        FROM overtime_requests o WHERE o.start_date LIKE ? ORDER BY o.start_date,o.id""",(month+'%',)).fetchall())
     return jsonify(rows)
 
 
@@ -143,6 +154,69 @@ def del_overtime(oid):
     return '',204
 
 
+@overtime_bp.route('/api/overtime/<int:oid>/attachments')
+@login_required
+def list_overtime_attachments(oid):
+    u=current_user(); db=get_db()
+    row=r2d(db.execute("SELECT * FROM overtime_requests WHERE id=?",(oid,)).fetchone())
+    if not row: return '',404
+    if not _can_view_overtime(u,row): return jsonify({'error':'无权限'}),403
+    rows=rs(db.execute("""SELECT id,overtime_id,filename,mimetype,size,created_at
+        FROM overtime_attachments WHERE overtime_id=? ORDER BY id""",(oid,)).fetchall())
+    return jsonify(rows)
+
+
+@overtime_bp.route('/api/overtime/<int:oid>/attachments', methods=['POST'])
+@login_required
+def add_overtime_attachment(oid):
+    u=current_user(); db=get_db()
+    row=r2d(db.execute("SELECT * FROM overtime_requests WHERE id=?",(oid,)).fetchone())
+    if not row: return '',404
+    if not _can_edit_overtime(u,row): return jsonify({'error':'无权限或记录已锁定'}),403
+    files=[f for f in request.files.getlist('file') if f and f.filename]
+    if not files: return jsonify({'error':'请选择要上传的图片'}),400
+    for f in files:
+        mimetype=f.mimetype or ''
+        if mimetype not in ALLOWED_ATTACHMENT_TYPES:
+            return jsonify({'error':'仅支持上传图片附件（png/jpg/gif/webp/bmp）'}),400
+        data=f.read()
+        if len(data)>MAX_ATTACHMENT_SIZE:
+            return jsonify({'error':'单个附件不能超过8MB'}),400
+        db.execute("INSERT INTO overtime_attachments(overtime_id,filename,mimetype,size,data) VALUES(?,?,?,?,?)",
+            (oid,f.filename,mimetype,len(data),data))
+    db.commit()
+    rows=rs(db.execute("""SELECT id,overtime_id,filename,mimetype,size,created_at
+        FROM overtime_attachments WHERE overtime_id=? ORDER BY id""",(oid,)).fetchall())
+    return jsonify(rows),201
+
+
+@overtime_bp.route('/api/overtime/attachments/<int:aid>')
+@login_required
+def get_overtime_attachment(aid):
+    u=current_user(); db=get_db()
+    att=db.execute("""SELECT a.id,a.filename,a.mimetype,a.data,o.member_id
+        FROM overtime_attachments a JOIN overtime_requests o ON o.id=a.overtime_id WHERE a.id=?""",(aid,)).fetchone()
+    if not att: return '',404
+    if not _can_view_overtime(u,{'member_id':att['member_id']}): return jsonify({'error':'无权限'}),403
+    buf=io.BytesIO(att['data'])
+    return send_file(buf, mimetype=att['mimetype'] or 'application/octet-stream',
+                      as_attachment=(request.args.get('dl')=='1'), download_name=att['filename'])
+
+
+@overtime_bp.route('/api/overtime/attachments/<int:aid>', methods=['DELETE'])
+@login_required
+def del_overtime_attachment(aid):
+    u=current_user(); db=get_db()
+    att=db.execute("""SELECT a.id,o.member_id,o.locked
+        FROM overtime_attachments a JOIN overtime_requests o ON o.id=a.overtime_id WHERE a.id=?""",(aid,)).fetchone()
+    if not att: return '',404
+    if not _can_edit_overtime(u,{'member_id':att['member_id'],'locked':att['locked']}):
+        return jsonify({'error':'无权限或记录已锁定'}),403
+    db.execute("DELETE FROM overtime_attachments WHERE id=?",(aid,))
+    db.commit()
+    return '',204
+
+
 @overtime_bp.route('/api/overtime/<int:oid>/lock', methods=['POST'])
 @admin_required
 def lock_overtime(oid):
@@ -155,17 +229,31 @@ def lock_overtime(oid):
     return jsonify(r2d(db.execute("SELECT * FROM overtime_requests WHERE id=?",(oid,)).fetchone()))
 
 
+def _ot_fill(ws, rows):
+    for i,r in enumerate(rows, start=3):
+        _ot_row(ws, i, [
+            r.get('employee_no') or '', r.get('member_name') or '',
+            (r['start_date'] or '').replace('-','/'), r['start_time'],
+            (r['end_date'] or '').replace('-','/'), r['end_time'],
+            r.get('rest_start_time') or '', r.get('rest_end_time') or '',
+            _OT_TYPE_MAP.get(r.get('overtime_type'), r.get('overtime_type') or ''),
+            r.get('reason') or '',
+        ])
+
+
 @overtime_bp.route('/api/export/overtime')
 @admin_required
 def exp_overtime():
-    """Export overtime records to Excel. With `month`: single-month, one sheet.
-    Without `month` (year only): whole year, one sheet per month (Jan-Dec).
+    """Export overtime records to Excel. With `week` (ISO week string, e.g. 2026-W29):
+    single sheet for that Monday-Sunday range. Else with `month`: single-month, one sheet.
+    Else (year only): whole year, one sheet per month (Jan-Dec).
     Group scope: 超级管理员(admin) may pass `groups` (comma-separated group names) to combine
     selected groups into one file, or omit it to export all groups. 普通管理员 are always
     locked to their own group_name, regardless of any `groups` param sent."""
     u=current_user()
     yr=int(request.args.get('year',datetime.date.today().year))
     mo=request.args.get('month')
+    wk=request.args.get('week')
     is_super=(u.get('username')=='admin')
     if is_super:
         raw_groups=[g.strip() for g in request.args.get('groups','').split(',') if g.strip()]
@@ -176,28 +264,37 @@ def exp_overtime():
         scope_label=u.get('group_name') or ''
     db=get_db()
     wb=Workbook(); wb.remove(wb.active)
-    months=[int(mo)] if mo else list(range(1,13))
-    for m in months:
-        month_str="{}-{:02d}".format(yr,m)
+
+    def _query(date_from, date_to):
         sql="""SELECT o.*, m.group_name AS grp FROM overtime_requests o
-               JOIN members m ON m.id=o.member_id WHERE o.start_date LIKE ?"""
-        params=[month_str+'%']
+               JOIN members m ON m.id=o.member_id WHERE o.start_date>=? AND o.start_date<=?"""
+        params=[date_from, date_to]
         if group_list:
             sql+=" AND m.group_name IN ({})".format(','.join('?'*len(group_list)))
             params+=group_list
         sql+=" ORDER BY o.start_date,o.id"
-        rows=rs(db.execute(sql,params).fetchall())
-        ws=_ot_sheet(wb, "{}年{}月加班".format(str(yr)[-2:],m))
-        for i,r in enumerate(rows, start=3):
-            _ot_row(ws, i, [
-                r.get('employee_no') or '', r.get('member_name') or '',
-                (r['start_date'] or '').replace('-','/'), r['start_time'],
-                (r['end_date'] or '').replace('-','/'), r['end_time'],
-                r.get('rest_start_time') or '', r.get('rest_end_time') or '',
-                _OT_TYPE_MAP.get(r.get('overtime_type'), r.get('overtime_type') or ''),
-                r.get('reason') or '',
-            ])
+        return rs(db.execute(sql,params).fetchall())
+
+    if wk:
+        try:
+            wy_s, wn_s = wk.split('-W')
+            wy, wn = int(wy_s), int(wn_s)
+            wstart = datetime.date.fromisocalendar(wy, wn, 1)
+            wend = datetime.date.fromisocalendar(wy, wn, 7)
+        except (ValueError, IndexError):
+            return jsonify({'error':'周参数不合法'}),400
+        rows=_query(wstart.isoformat(), wend.isoformat())
+        ws=_ot_sheet(wb, "第{}周加班({}-{})".format(wn, wstart.strftime('%m.%d'), wend.strftime('%m.%d')))
+        _ot_fill(ws, rows)
+        fname="加班记录_{}_{}年第{}周.xlsx".format(scope_label,wy,wn)
+    else:
+        months=[int(mo)] if mo else list(range(1,13))
+        for m in months:
+            month_str="{}-{:02d}".format(yr,m)
+            rows=_query(month_str+'-01', month_str+'-31')
+            ws=_ot_sheet(wb, "{}年{}月加班".format(str(yr)[-2:],m))
+            _ot_fill(ws, rows)
+        fname="加班记录_{}_{}-{:02d}.xlsx".format(scope_label,yr,int(mo)) if mo else "加班记录_{}_{}.xlsx".format(scope_label,yr)
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
-    fname="加班记录_{}_{}-{:02d}.xlsx".format(scope_label,yr,int(mo)) if mo else "加班记录_{}_{}.xlsx".format(scope_label,yr)
     return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True,download_name=fname)

@@ -150,6 +150,15 @@ CREATE TABLE IF NOT EXISTS overtime_requests (
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT DEFAULT (datetime('now','localtime'))
 );
+CREATE TABLE IF NOT EXISTS overtime_attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    overtime_id INTEGER NOT NULL REFERENCES overtime_requests(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    mimetype TEXT,
+    size INTEGER,
+    data BLOB NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
 CREATE TABLE IF NOT EXISTS plan_reminders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     member_id INTEGER NOT NULL REFERENCES members(id),
@@ -176,6 +185,7 @@ CREATE INDEX IF NOT EXISTS idx_dp ON daily_plans(member_id, plan_date);
 CREATE INDEX IF NOT EXISTS idx_dps ON daily_plan_slots(daily_plan_id);
 CREATE INDEX IF NOT EXISTS idx_pr ON plan_reminders(member_id, due_date);
 CREATE INDEX IF NOT EXISTS idx_ot ON overtime_requests(member_id, start_date);
+CREATE INDEX IF NOT EXISTS idx_ota ON overtime_attachments(overtime_id);
 """)
     # Migration: add estimated_days if not exists
     try:

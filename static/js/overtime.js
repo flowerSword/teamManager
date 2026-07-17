@@ -3,13 +3,27 @@
 // ════════════════════════════════════════════
 let otMonth=thisMonth(), otList=[], otEditId=null;
 let otExportGroups=[], otAllGroups=[];
+let otWeek=isoWeekStr(new Date());
+let otPendingFiles=[], otExistingAtts=[];
 const OT_TYPES=['转加班费','转调休'];
+const OT_IMG_TYPES=['image/png','image/jpeg','image/jpg','image/gif','image/webp','image/bmp'];
+const OT_MAX_ATT_SIZE=8*1024*1024;
 
 function nextSaturday(){
   const d=new Date();
   const diff=(6-d.getDay()+7)%7;
   d.setDate(d.getDate()+diff);
   return toLocalDateStr(d);
+}
+
+function isoWeekStr(d){
+  const t=new Date(d.valueOf());
+  const dayNr=(d.getDay()+6)%7;
+  t.setDate(t.getDate()-dayNr+3);
+  const firstThu=new Date(t.getFullYear(),0,4);
+  const diff=t-firstThu;
+  const week=1+Math.round(diff/(7*24*3600*1000));
+  return `${t.getFullYear()}-W${String(week).padStart(2,'0')}`;
 }
 
 async function renderOvertime(){
@@ -27,6 +41,8 @@ async function renderOvertime(){
     <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
       ${ME.is_admin?`
         ${isSuperAdmin?'<div id="ot-group-filter"></div>':''}
+        <input class="fi" type="week" style="width:150px" value="${otWeek}" onchange="otWeek=this.value">
+        <button class="btn" onclick="exportOvertime('week')">📥 导出本周</button>
         <button class="btn" onclick="exportOvertime('month')">📥 导出本月</button>
         <button class="btn" onclick="exportOvertime('year')">📥 导出全年</button>
       `:''}
@@ -78,14 +94,16 @@ function renderOvertimeTbl(){
   if(!el) return;
   if(!otList.length){el.innerHTML='<div class="empty">该月暂无加班记录</div>';return;}
   el.innerHTML=`<table><thead><tr>
-    <th>工号</th><th>姓名</th><th>开始</th><th>结束</th><th>休息时段</th><th>类型</th><th>理由</th><th>状态</th><th style="width:150px">操作</th>
+    <th>工号</th><th>姓名</th><th>开始</th><th>结束</th><th>休息时段</th><th>类型</th><th>理由</th><th>状态</th><th style="width:190px">操作</th>
   </tr></thead><tbody>
   ${otList.map(r=>{
     const isOwner=r.member_id===ME.id;
     const canEdit=!r.locked&&(ME.is_admin||isOwner);
+    const canView=ME.is_admin||isOwner;
     const statusLabel=r.locked?'🔒 已锁定':'🔓 未锁定';
     let ops='';
     if(canEdit) ops+=`<button class="btn btn-sm" onclick="openOvertimeModal(${r.id})">编辑</button><button class="btn btn-sm btn-err" onclick="delOvertime(${r.id})">删除</button>`;
+    if(canView) ops+=`<button class="btn btn-sm" onclick="viewOvertimeAttachments(${r.id})">附件${r.attachment_count?`(${r.attachment_count})`:''}</button>`;
     if(ME.is_admin){
       ops+=r.locked?`<button class="btn btn-sm" onclick="toggleOvertimeLock(${r.id},false)">解锁</button>`
                     :`<button class="btn btn-sm" onclick="toggleOvertimeLock(${r.id},true)">确认锁定</button>`;
@@ -104,6 +122,7 @@ function renderOvertimeTbl(){
 
 function openOvertimeModal(id){
   otEditId=id;
+  otPendingFiles=[]; otExistingAtts=[];
   let r;
   if(id){
     r=otList.find(x=>x.id===id);
@@ -133,9 +152,60 @@ function openOvertimeModal(id){
     <div class="fgroup"><label class="flabel">加班类型 <span class="req">*</span></label>
       <select id="ot-type" class="fi">${OT_TYPES.map(t=>`<option${r.overtime_type===t?' selected':''}>${t}</option>`).join('')}</select></div>
     <div class="fgroup"><label class="flabel">加班理由</label><input id="ot-reason" class="fi" value="${esc(r.reason||'')}"></div>
+  </div>
+  <div class="frow">
+    <div class="fgroup">
+      <label class="flabel">附件（图片，可多选，不出现在导出文件中）</label>
+      <input id="ot-file-input" type="file" accept="image/*" multiple onchange="onOtFilesSelected(this.files)">
+      <div id="ot-att-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+    </div>
   </div>`;
   otStartDateTouched=false;
   openModal(id?'编辑加班记录':'申请加班',body,saveOvertimeEditor,true);
+  if(id) loadOtAttachments(id); else renderOtAttachmentList();
+}
+
+async function loadOtAttachments(id){
+  otExistingAtts=await GET('/overtime/'+id+'/attachments')||[];
+  renderOtAttachmentList();
+}
+
+function onOtFilesSelected(fileList){
+  for(const f of Array.from(fileList||[])){
+    if(!OT_IMG_TYPES.includes(f.type)){toast('仅支持图片附件','err');continue;}
+    if(f.size>OT_MAX_ATT_SIZE){toast(`${f.name} 超过8MB，无法添加`,'err');continue;}
+    otPendingFiles.push(f);
+  }
+  document.getElementById('ot-file-input').value='';
+  renderOtAttachmentList();
+}
+
+function removeOtPendingFile(idx){
+  otPendingFiles.splice(idx,1);
+  renderOtAttachmentList();
+}
+
+async function deleteOtAttachment(aid){
+  if(!confirm('确认删除该附件？')) return;
+  await DEL('/overtime/attachments/'+aid);
+  otExistingAtts=otExistingAtts.filter(a=>a.id!==aid);
+  renderOtAttachmentList();
+}
+
+function renderOtAttachmentList(){
+  const el=document.getElementById('ot-att-list');
+  if(!el) return;
+  const existing=otExistingAtts.map(a=>`
+    <div style="position:relative;width:84px">
+      <img src="/api/overtime/attachments/${a.id}" style="width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('/api/overtime/attachments/${a.id}','_blank')" title="点击预览">
+      <button type="button" class="btn btn-sm btn-err" style="position:absolute;top:-8px;right:-8px;padding:0 6px;border-radius:50%" onclick="deleteOtAttachment(${a.id})">✕</button>
+    </div>`).join('');
+  const pending=otPendingFiles.map((f,idx)=>`
+    <div style="position:relative;width:84px">
+      <img src="${URL.createObjectURL(f)}" style="width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">
+      <button type="button" class="btn btn-sm btn-err" style="position:absolute;top:-8px;right:-8px;padding:0 6px;border-radius:50%" onclick="removeOtPendingFile(${idx})">✕</button>
+    </div>`).join('');
+  el.innerHTML=existing+pending||'<span style="color:var(--muted)">暂无附件</span>';
 }
 
 let otStartDateTouched=false;
@@ -151,7 +221,14 @@ async function saveOvertimeEditor(){
   const payload={employee_no:gv('ot-empno'),start_date,start_time,end_date,end_time,
     rest_start_time:gv('ot-rstart'),rest_end_time:gv('ot-rend'),overtime_type,reason:gv('ot-reason')};
   const res=otEditId?await PUT('/overtime/'+otEditId,payload):await POST('/overtime',payload);
-  if(res){toast(otEditId?'更新成功':'申请成功');closeModal();loadOvertimeList();}
+  if(!res) return;
+  if(otPendingFiles.length){
+    const fd=new FormData();
+    otPendingFiles.forEach(f=>fd.append('file',f));
+    const up=await fetch('/api/overtime/'+res.id+'/attachments',{method:'POST',body:fd});
+    if(!up.ok){const e=await up.json().catch(()=>({}));toast(e.error||'附件上传失败','err');}
+  }
+  toast(otEditId?'更新成功':'申请成功');closeModal();loadOvertimeList();
 }
 
 async function delOvertime(id){
@@ -168,11 +245,28 @@ async function toggleOvertimeLock(id,locked){
   loadOvertimeList();
 }
 
+async function viewOvertimeAttachments(id){
+  const atts=await GET('/overtime/'+id+'/attachments')||[];
+  const body=atts.length?`<div style="display:flex;flex-wrap:wrap;gap:12px">
+    ${atts.map(a=>`
+      <div style="width:140px;text-align:center">
+        <img src="/api/overtime/attachments/${a.id}" style="width:140px;height:140px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('/api/overtime/attachments/${a.id}','_blank')" title="点击预览大图">
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;word-break:break-all">${esc(a.filename)}</div>
+        <a class="btn btn-sm" style="margin-top:4px" href="/api/overtime/attachments/${a.id}?dl=1" target="_blank">下载</a>
+      </div>`).join('')}
+  </div>`:'<div class="empty">暂无附件</div>';
+  openModal('查看附件',body,closeModal,true);
+}
+
 async function exportOvertime(mode){
   const [y,m]=otMonth.split('-');
-  let url=mode==='year'?`/api/export/overtime?year=${y}`:`/api/export/overtime?year=${y}&month=${parseInt(m)}`;
+  let url, fname;
+  if(mode==='week'){ url=`/api/export/overtime?week=${encodeURIComponent(otWeek)}`; fname=`加班记录_${otWeek}.xlsx`; }
+  else if(mode==='year'){ url=`/api/export/overtime?year=${y}`; fname=`加班记录_${y}年.xlsx`; }
+  else{ url=`/api/export/overtime?year=${y}&month=${parseInt(m)}`; fname=`加班记录_${y}年${m}月.xlsx`; }
   if(ME.is_admin&&ME.username==='admin'&&otExportGroups.length) url+=`&groups=${encodeURIComponent(otExportGroups.join(','))}`;
-  const blob=await fetch(url).then(r=>r.blob());
-  dlBlob(blob,mode==='year'?`加班记录_${y}年.xlsx`:`加班记录_${y}年${m}月.xlsx`);
+  const resp=await fetch(url);
+  if(!resp.ok){ const e=await resp.json().catch(()=>({})); toast(e.error||'导出失败','err'); return; }
+  dlBlob(await resp.blob(),fname);
 }
 
