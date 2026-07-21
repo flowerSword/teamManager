@@ -271,10 +271,14 @@ async function loadDpHistoryList(){
   if(!el) return;
   el.innerHTML='加载中...';
   const list=await GET('/plan/history?month='+dpHistMonth)||[];
-  el.innerHTML=list.length?`<div class="dp-hist-list">${list.map(d=>`<div class="dp-hist-item" onclick="previewDpDate('${d.plan_date}')">
+  el.innerHTML=list.length?`<div class="dp-hist-list">${list.map(d=>{
+    const done=d.completed_count||0, total=d.slot_count||0;
+    const allDone=total>0&&done>=total;
+    const statusTag=total?`<span class="dp-hist-status ${allDone?'is-done':'is-undone'}">${allDone?'✓ 全部完成':`已完成 ${done}/${total}`}</span>`:'';
+    return `<div class="dp-hist-item" onclick="previewDpDate('${d.plan_date}')">
     <span class="dp-hist-date">${d.plan_date}${d.plan_date===today()?' <span class="tag-me">今天</span>':''}</span>
-    <span class="dp-hist-count">${d.slot_count} 个时间段 ›</span>
-  </div>`).join('')}</div>`:'<div class="empty">该月暂无历史计划记录</div>';
+    <span style="display:flex;gap:6px;align-items:center;flex-shrink:0">${statusTag}<span class="dp-hist-count">${d.slot_count} 个时间段 ›</span></span>
+  </div>`;}).join('')}</div>`:'<div class="empty">该月暂无历史计划记录</div>';
 }
 async function previewDpDate(dt){
   const res=await GET('/plan/day/'+dt)||{slots:[]};
@@ -283,7 +287,9 @@ async function previewDpDate(dt){
   ${slots.length?`<div class="dp-hist-slots">
     ${slots.map(s=>{
       const t=dpMyTasksCache.find(x=>String(x.id)===String(s.task_id));
-      return `<div class="dp-hist-slot">
+      const done=!!s.completed;
+      return `<div class="dp-hist-slot${done?' is-done':''}">
+        <span class="dp-hist-slot-flag ${done?'is-done':'is-undone'}">${done?'✓ 已完成':'未完成'}</span>
         <div class="dp-hist-slot-time">${s.start_time||''}~${s.end_time||''}</div>
         <div class="dp-hist-slot-content">${esc(s.content||'')}</div>
         ${t?`<span class="bd bd-blue" style="flex-shrink:0">${esc(t.title)}</span>`:''}

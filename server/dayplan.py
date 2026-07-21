@@ -164,7 +164,8 @@ def del_plan_reminder(rid):
 def plan_history():
     u=current_user(); db=get_db()
     month=request.args.get('month') or today()[:7]
-    rows=db.execute("""SELECT dp.plan_date as plan_date, COUNT(s.id) as slot_count
+    rows=db.execute("""SELECT dp.plan_date as plan_date, COUNT(s.id) as slot_count,
+        COALESCE(SUM(CASE WHEN s.completed=1 THEN 1 ELSE 0 END),0) as completed_count
         FROM daily_plans dp LEFT JOIN daily_plan_slots s ON s.daily_plan_id=dp.id
         WHERE dp.member_id=? AND dp.plan_date LIKE ?
         GROUP BY dp.id ORDER BY dp.plan_date DESC""",(u['id'],month+'%')).fetchall()

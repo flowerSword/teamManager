@@ -235,6 +235,14 @@ textarea.fi{resize:vertical;min-height:64px}
 .dp-hist-slot-time{font-weight:700;min-width:96px;color:var(--pri);font-size:12px;background:rgba(var(--bg-rgb),.35);
   padding:3px 8px;border-radius:20px;text-align:center}
 .dp-hist-slot-content{flex:1;font-size:13px}
+.dp-hist-status{font-size:11px;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.dp-hist-status.is-done{color:#4ade80;background:rgba(74,222,128,.12)}
+.dp-hist-status.is-undone{color:#fbbf24;background:rgba(251,191,36,.12)}
+.dp-hist-slot.is-done{opacity:.75;border-color:rgba(74,222,128,.35)}
+.dp-hist-slot.is-done .dp-hist-slot-content{color:var(--tx2);text-decoration:line-through}
+.dp-hist-slot-flag{font-size:11px;padding:2px 8px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+.dp-hist-slot-flag.is-done{color:#4ade80;background:rgba(74,222,128,.12)}
+.dp-hist-slot-flag.is-undone{color:#fbbf24;background:rgba(251,191,36,.12)}
 
 /* APPEARANCE / BG IMAGE */
 body.has-bg-img{background-size:cover!important;background-attachment:fixed!important;background-repeat:no-repeat!important;background-position:center!important}
