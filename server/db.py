@@ -230,6 +230,10 @@ CREATE INDEX IF NOT EXISTS idx_ota ON overtime_attachments(overtime_id);
         db.commit()
     except: pass
     try:
+        db.execute("ALTER TABLE members ADD COLUMN can_cross_group INTEGER DEFAULT 0")
+        db.commit()
+    except: pass
+    try:
         admin_pw = hash_pw('admin123')
         default_pw = hash_pw('123456')
         db.execute("INSERT OR IGNORE INTO members(name,username,password,role,group_name,is_admin) VALUES(?,?,?,?,?,?)",

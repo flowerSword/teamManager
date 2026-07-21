@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════
 // TASK LIST (共用，admin全组，member自己的)
 // ════════════════════════════════════════════
-let taskTab='REQUIREMENT', taskPage=1, taskFilter=[], taskDmFilter='', taskNoFilter='', taskAllCache=[];
+let taskTab='REQUIREMENT', taskPage=1, taskFilter=[], taskDmFilter='', taskNoFilter='', taskAssigneeFilter='', taskAllCache=[];
 async function renderMyTasks(){
   document.getElementById('tb-title').textContent='我的任务';
   renderTaskList(false);
@@ -21,13 +21,14 @@ function renderTaskList(isAdmin){
     </div>
   </div>
   <div class="ttabs">
-    ${[['REQUIREMENT','需求'],['ISSUE','问题单'],['ONSITE','现场支撑'],['OTHER','其他事务'],['QUALITY','质量深耕']].map(([t,l])=>`
+    ${[['ALL','全部'],['REQUIREMENT','需求'],['ISSUE','问题单'],['ONSITE','现场支撑'],['OTHER','其他事务'],['QUALITY','质量深耕']].map(([t,l])=>`
       <button class="ttab${taskTab===t?' active':''}" onclick="taskTab='${t}';taskPage=1;loadTaskTable(${isAdmin})">${l}</button>`).join('')}
   </div>
   <div id="task-stats" class="sgrid" style="grid-template-columns:repeat(4,1fr)"></div>
   <div class="card">
     <div class="fbar" style="flex-wrap:wrap;align-items:center;gap:10px">
       <div id="task-status-filter" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <div id="task-assignee-filter"></div>
       <div id="task-dm-filter"></div>
       <div id="task-no-filter"></div>
       <span style="color:var(--tx3);font-size:13px" id="task-count"></span>
@@ -45,9 +46,11 @@ async function loadTaskTable(isAdmin, page){
     const match=t.match(/taskTab='(\w+)'/);
     if(match) btn.classList.toggle('active', match[1]===taskTab);
   });
-  const endpoint=isAdmin?`/tasks?type=${taskTab}`:`/tasks/mine?type=${taskTab}`;
+  const typeQuery=taskTab==='ALL'?'':`?type=${taskTab}`;
+  const endpoint=isAdmin?`/tasks${typeQuery}`:`/tasks/mine${typeQuery}`;
   taskAllCache=await GET(endpoint)||[];
   taskFilter=taskFilter.filter(s=>taskStatusesFor(taskTab).includes(s));
+  if(taskAssigneeFilter && !taskAllCache.some(t=>t.assignee_name===taskAssigneeFilter)) taskAssigneeFilter='';
   renderTaskFilterBar(isAdmin);
   renderTaskRows(isAdmin);
 }
@@ -82,6 +85,14 @@ function renderTaskFilterBar(isAdmin){
     noEl.innerHTML=(taskTab==='REQUIREMENT'||taskTab==='ISSUE')?
       `<input class="fi" style="width:160px" value="${esc(taskNoFilter)}" placeholder="按${taskTab==='ISSUE'?'问题单号':'需求单号'}搜索" oninput="taskNoFilter=this.value;taskPage=1;renderTaskRows(${isAdmin})">`:'';
   }
+  const asEl=document.getElementById('task-assignee-filter');
+  if(asEl){
+    const names=[...new Set(taskAllCache.map(t=>t.assignee_name).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh'));
+    asEl.innerHTML=`<select class="fi" style="width:140px" onchange="taskAssigneeFilter=this.value;taskPage=1;renderTaskRows(${isAdmin})">
+      <option value="">全部负责人</option>
+      ${names.map(n=>`<option value="${esc(n)}" ${taskAssigneeFilter===n?'selected':''}>${esc(n)}</option>`).join('')}
+    </select>`;
+  }
 }
 
 function renderTaskRows(isAdmin){
@@ -89,6 +100,7 @@ function renderTaskRows(isAdmin){
   const filtered=all.filter(t=>
     (!taskFilter.length||taskFilter.includes(t.status)) &&
     (taskTab==='ONSITE'||!taskDmFilter||t.delivery_month===taskDmFilter) &&
+    (!taskAssigneeFilter||t.assignee_name===taskAssigneeFilter) &&
     (!taskNoFilter||(t.requirement_no||'').toLowerCase().includes(taskNoFilter.toLowerCase())||(t.issue_no||'').toLowerCase().includes(taskNoFilter.toLowerCase())));
   const ct=document.getElementById('task-count');
   if(ct)ct.textContent=`共 ${filtered.length} 条`;
@@ -103,7 +115,8 @@ function renderTaskRows(isAdmin){
   }
   const {rows,page:p,pages}=paginate(filtered,taskPage);
   let cols='';
-  if(taskTab==='REQUIREMENT') cols=`<th>需求单号</th><th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
+  if(taskTab==='ALL') cols=`<th>类型</th><th>负责人</th><th>状态</th><th>进度</th><th>计划开始</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
+  else if(taskTab==='REQUIREMENT') cols=`<th>需求单号</th><th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
   else if(taskTab==='ISSUE') cols=`<th>问题单号</th><th>严重度</th><th>负责人</th><th>状态</th><th>计划解决</th><th>超期</th>`;
   else if(taskTab==='ONSITE') cols=`<th>地点</th><th>负责人</th><th>状态</th><th>开始</th><th>结束</th>`;
   else if(taskTab==='QUALITY') cols=`<th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
@@ -113,7 +126,16 @@ function renderTaskRows(isAdmin){
   ${rows.map(t=>{
     const isMe=t.assignee_id===ME.id||t.created_by===ME.id;
     let cells='';
-    if(taskTab==='REQUIREMENT') cells=`<td>${esc(t.requirement_no||'-')}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
+    if(taskTab==='ALL'){
+      const doneAll=['DELIVERED','COMPLETED','RESOLVED','CLOSED'];
+      cells=`<td>${tbadge(t.task_type)}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
+      <td style="min-width:80px"><div class="prog"><div class="pf" style="width:${t.progress||0}%;background:${t.has_risk?'var(--err)':'var(--pri)'}"></div></div><small style="color:var(--tx3)">${t.progress||0}%</small></td>
+      <td>${t.plan_start_date||'-'}</td>
+      <td style="color:${t.plan_end_date&&t.plan_end_date<today()&&!doneAll.includes(t.status)?'var(--err)':'inherit'}">${t.plan_end_date||'-'}</td>
+      <td>${t.delivery_month||'-'}</td>
+      <td>${t.has_risk&&!['DELIVERED','CANCELLED'].includes(t.status)?`<span style="color:var(--warn);font-size:11px">⚠ ${esc((t.risk_description||'').slice(0,12))}</span>`:'<span style="color:var(--tx3)">正常</span>'}`;
+    }
+    else if(taskTab==='REQUIREMENT') cells=`<td>${esc(t.requirement_no||'-')}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
       <td style="min-width:80px"><div class="prog"><div class="pf" style="width:${t.progress||0}%;background:${t.has_risk?'var(--err)':'var(--pri)'}"></div></div><small style="color:var(--tx3)">${t.progress||0}%</small></td>
       <td style="color:${t.plan_end_date&&t.plan_end_date<today()&&t.status!=='DELIVERED'?'var(--err)':'inherit'}">${t.plan_end_date||'-'}</td>
       <td>${t.delivery_month||'-'}</td>
@@ -164,7 +186,7 @@ function taskNoFieldHtml(type,t){
 // ════════════════════════════════════════════
 async function openTaskModal(id){
   const members=await GET('/members/active')||[];
-  let t={task_type:taskTab,status:'PENDING',priority:'MEDIUM',group_name:ME.group_name};
+  let t={task_type:taskTab==='ALL'?'REQUIREMENT':taskTab,status:'PENDING',priority:'MEDIUM',group_name:ME.group_name};
   if(id){t=await GET('/tasks/'+id)||t;}
   const memOpts=members.filter(m=>!m.is_admin).map(m=>`<option value="${m.id}" ${t.assignee_id==m.id?'selected':''}>${esc(m.name)}</option>`).join('');
   const isIssue=t.task_type==='ISSUE', isOnsite=t.task_type==='ONSITE';
@@ -275,6 +297,7 @@ async function delTask(id){
   ME.is_admin?loadTaskTable(true):loadTaskTable(false);
 }
 async function exportTasks(){
+  if(taskTab==='ALL'){toast('请切换到具体任务类型后再导出','err');return;}
   const sm=yearStart(),em=thisMonth();
   const blob=await fetch(`/api/export/tasks/${encodeURIComponent(ME.group_name)}?type=${taskTab}&startMonth=${sm}&endMonth=${em}`).then(r=>r.blob());
   dlBlob(blob,`${TZ[taskTab]||taskTab}报表.xlsx`);

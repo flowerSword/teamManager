@@ -12,9 +12,9 @@ members_bp = Blueprint('members', __name__)
 def list_members():
     u=current_user(); db=get_db()
     if u['is_admin']:
-        rows=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no,created_at FROM members ORDER BY id").fetchall()
+        rows=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no,can_cross_group,created_at FROM members ORDER BY id").fetchall()
     else:
-        rows=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no,created_at FROM members WHERE group_name=? AND is_active=1 ORDER BY id",(u['group_name'],)).fetchall()
+        rows=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no,can_cross_group,created_at FROM members WHERE group_name=? AND is_active=1 ORDER BY id",(u['group_name'],)).fetchall()
     return jsonify(rs(rows))
 
 
@@ -22,7 +22,7 @@ def list_members():
 @login_required
 def active_members():
     u=current_user(); db=get_db()
-    if u['is_admin']:
+    if u['is_admin'] or u.get('can_cross_group'):
         rows=db.execute("SELECT id,name,username,role,group_name,is_admin FROM members WHERE is_active=1 ORDER BY id").fetchall()
     else:
         rows=db.execute("SELECT id,name,username,role,group_name,is_admin FROM members WHERE group_name=? AND is_active=1 ORDER BY id",(u['group_name'],)).fetchall()
@@ -34,13 +34,13 @@ def active_members():
 def add_member():
     d=request.json; db=get_db()
     raw=d.get('password','123456'); pw_store=hash_pw(raw) if d.get('pw_plain') else (raw if len(raw)==64 else hash_pw(raw))
-    c=db.execute("INSERT INTO members(name,username,password,email,phone,role,group_name,is_admin,is_active,employee_no) VALUES(?,?,?,?,?,?,?,?,?,?)",
+    c=db.execute("INSERT INTO members(name,username,password,email,phone,role,group_name,is_admin,is_active,employee_no,can_cross_group) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         (d['name'],d['username'],pw_store,d.get('email'),d.get('phone'),
          d.get('role','DEVELOPER'),d.get('group_name'),1 if d.get('is_admin') else 0,1 if d.get('is_active',True) else 0,
-         d.get('employee_no')))
+         d.get('employee_no'),1 if d.get('can_cross_group') else 0))
     seed_default_plan_templates(db, c.lastrowid)
     db.commit()
-    row=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no FROM members WHERE id=?",(c.lastrowid,)).fetchone()
+    row=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no,can_cross_group FROM members WHERE id=?",(c.lastrowid,)).fetchone()
     return jsonify(r2d(row)),201
 
 
@@ -52,14 +52,15 @@ def upd_member(mid):
         if mid!=u['id']: return jsonify({'error':'无权限'}),403
         db.execute("UPDATE members SET email=?,phone=? WHERE id=?",(d.get('email'),d.get('phone'),mid))
     else:
-        db.execute("UPDATE members SET name=?,username=?,email=?,phone=?,role=?,group_name=?,is_admin=?,is_active=?,employee_no=? WHERE id=?",
+        db.execute("UPDATE members SET name=?,username=?,email=?,phone=?,role=?,group_name=?,is_admin=?,is_active=?,employee_no=?,can_cross_group=? WHERE id=?",
             (d['name'],d['username'],d.get('email'),d.get('phone'),d.get('role','DEVELOPER'),
-             d.get('group_name'),1 if d.get('is_admin') else 0,1 if d.get('is_active',True) else 0,d.get('employee_no'),mid))
+             d.get('group_name'),1 if d.get('is_admin') else 0,1 if d.get('is_active',True) else 0,d.get('employee_no'),
+             1 if d.get('can_cross_group') else 0,mid))
         if d.get('password'):
             raw2=d['password']; pw2=hash_pw(raw2) if d.get('pw_plain') else (raw2 if len(raw2)==64 else hash_pw(raw2))
             db.execute("UPDATE members SET password=? WHERE id=?",(pw2,mid))
     db.commit()
-    row=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no FROM members WHERE id=?",(mid,)).fetchone()
+    row=db.execute("SELECT id,name,username,email,phone,role,group_name,is_admin,is_active,employee_no,can_cross_group FROM members WHERE id=?",(mid,)).fetchone()
     return jsonify(r2d(row)) if row else ('',404)
 
 

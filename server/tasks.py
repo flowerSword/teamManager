@@ -88,14 +88,19 @@ def task_stats(gn):
 @tasks_bp.route('/api/tasks', methods=['POST'])
 @login_required
 def add_task():
-    u=current_user(); d=dict(request.json)
-    if not d.get('group_name'): d['group_name']=u['group_name']
-    d['created_by']=u['id']
+    u=current_user(); d=dict(request.json); db=get_db()
     # Auto-assign to self if not specified
-    if not d.get('assignee_id'): d['assignee_id']=u['id']; d['assignee_name']=u['name']
+    aid=d.get('assignee_id') or u['id']
+    assignee=r2d(db.execute("SELECT id,name,group_name FROM members WHERE id=?",(aid,)).fetchone())
+    if assignee and assignee.get('group_name')!=u['group_name'] and not (u['is_admin'] or u.get('can_cross_group')):
+        return jsonify({'error':'无权限为其他组成员创建任务'}),403
+    d['assignee_id']=aid
+    if not d.get('assignee_name'): d['assignee_name']=assignee['name'] if assignee else u['name']
+    d['group_name']=(assignee.get('group_name') if assignee else None) or u['group_name']
+    d['created_by']=u['id']
     if not d.get('reporter_name'): d['reporter_name']=u['name']
     if not d.get('delivery_month') and d.get('plan_end_date'): d['delivery_month']=d['plan_end_date'][:7]
-    d=auto_risk(d); db=get_db()
+    d=auto_risk(d)
     c=db.execute("""INSERT INTO tasks(title,description,task_type,status,priority,severity,issue_type,
         assignee_id,assignee_name,reporter_name,group_name,plan_start_date,plan_end_date,actual_end_date,
         delivery_month,progress,has_risk,risk_description,version,module,location,estimated_days,parent_task_id,
@@ -133,17 +138,22 @@ def upd_task(tid):
         if v is None or v == '':
             return existing.get(key, default)
         return v
+    new_aid=keep('assignee_id')
+    assignee=r2d(db.execute("SELECT id,name,group_name FROM members WHERE id=?",(new_aid,)).fetchone()) if new_aid else None
+    if assignee and assignee.get('group_name')!=u['group_name'] and not (u['is_admin'] or u.get('can_cross_group')):
+        return jsonify({'error':'无权限将任务指派给其他组成员'}),403
+    new_group=(assignee.get('group_name') if assignee else None) or existing.get('group_name') or u['group_name']
     if d.get('status') in ('DELIVERED','COMPLETED','RESOLVED','CLOSED') and not d.get('actual_end_date'):
         d['actual_end_date']=today()
         if not d.get('progress'): d['progress']=100
     d=auto_risk(d); db.execute("""UPDATE tasks SET title=?,description=?,task_type=?,status=?,priority=?,
-        severity=?,issue_type=?,assignee_id=?,assignee_name=?,reporter_name=?,plan_start_date=?,
+        severity=?,issue_type=?,assignee_id=?,assignee_name=?,reporter_name=?,group_name=?,plan_start_date=?,
         plan_end_date=?,actual_end_date=?,delivery_month=?,progress=?,has_risk=?,risk_description=?,
         version=?,module=?,location=?,estimated_days=?,parent_task_id=?,requirement_no=?,issue_no=?,
         updated_at=? WHERE id=?""",
         (keep('title'),d.get('description'),keep('task_type'),
          keep('status'),keep('priority'),d.get('severity'),d.get('issue_type'),
-         keep('assignee_id'),keep('assignee_name'),d.get('reporter_name'),
+         new_aid,keep('assignee_name'),d.get('reporter_name'),new_group,
          d.get('plan_start_date'),d.get('plan_end_date'),d.get('actual_end_date'),
          d.get('delivery_month'),d.get('progress',existing.get('progress',0)),
          d.get('has_risk',0),d.get('risk_description'),

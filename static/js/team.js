@@ -100,7 +100,7 @@ async function loadTeam(page){
     <td>${esc(m.employee_no||'')}</td>
     <td><span class="bd bd-blue">${esc(m.role||'')}</span></td>
     <td>${esc(m.group_name||'')}</td>
-    <td>${m.is_admin?'<span class="bd bd-purple">管理员</span>':'<span class="bd bd-gray">成员</span>'}</td>
+    <td>${m.is_admin?'<span class="bd bd-purple">管理员</span>':'<span class="bd bd-gray">成员</span>'}${m.can_cross_group?' <span class="bd bd-teal" title="可跨组建任务">跨组</span>':''}</td>
     <td>${m.is_active?'<span class="bd bd-green">在职</span>':'<span class="bd bd-red">停用</span>'}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="openMemModal(${m.id})">编辑</button>
@@ -138,13 +138,17 @@ async function openMemModal(id){
     <div class="fgroup"><label class="flabel">工号</label><input id="mf-empno" class="fi" value="${esc(m.employee_no||'')}"></div>
     <div class="fgroup"><label class="flabel">管理员权限</label>
       <select id="mf-admin" class="fi"><option value="0" ${!m.is_admin?'selected':''}>普通成员</option><option value="1" ${m.is_admin?'selected':''}>管理员</option></select></div>
+  </div>
+  <div class="frow c2">
+    <div class="fgroup"><label class="flabel">跨组建任务权限</label>
+      <select id="mf-cross-group" class="fi"><option value="0" ${!m.can_cross_group?'selected':''}>无（仅本组）</option><option value="1" ${m.can_cross_group?'selected':''}>允许（可为任意组成员建任务）</option></select></div>
   </div>`,
   async()=>{
     const name=gv('mf-name'),username=gv('mf-uname');
     if(!name||!username){toast('姓名用户名必填','err');return;}
     const payload={name,username,email:gv('mf-email'),role:gv('mf-role'),group_name:gv('mf-gn'),
       employee_no:gv('mf-empno'),
-      is_admin:gv('mf-admin')==='1',is_active:gv('mf-active')==='1'};
+      is_admin:gv('mf-admin')==='1',is_active:gv('mf-active')==='1',can_cross_group:gv('mf-cross-group')==='1'};
     const pw=gv('mf-pw'); if(pw)payload.password=pw; else if(!id)payload.password='123456';
     const res=id?await PUT('/members/'+id,payload):await POST('/members',payload);
     if(res){toast(id?'更新成功':'添加成功');closeModal();loadTeam();}
