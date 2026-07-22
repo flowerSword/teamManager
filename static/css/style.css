@@ -245,13 +245,25 @@ textarea.fi{resize:vertical;min-height:64px}
 .dp-hist-slot-flag.is-undone{color:#fbbf24;background:rgba(251,191,36,.12)}
 
 /* ── 每日计划拖拽排序 ── */
-#dp-table tbody tr{cursor:default;transition:background .15s,box-shadow .15s}
-#dp-table tbody tr.dp-dragging{opacity:.45;background:var(--s3)}
-#dp-table tbody tr.dp-drag-over{box-shadow:inset 0 -3px 0 var(--pri)}
-#dp-table tbody tr.dp-drag-before{box-shadow:inset 0 3px 0 var(--pri)}
-.dp-handle{cursor:grab;text-align:center;vertical-align:middle;width:32px}
+#dp-table tbody tr{position:relative;cursor:default;transition:background .15s,box-shadow .15s,opacity .15s}
+#dp-table tbody tr.dp-dragging{opacity:.4;background:var(--s3)}
+#dp-table tbody tr.dp-dragging td{box-shadow:0 0 0 1px var(--pri) inset}
+#dp-table tbody tr.dp-drag-over::after,
+#dp-table tbody tr.dp-drag-before::before{
+  content:'';position:absolute;left:2px;right:2px;height:3px;border-radius:3px;z-index:5;
+  background:var(--pri);box-shadow:0 0 0 3px rgba(59,130,246,.22),0 0 10px 1px var(--pri);
+  animation:dpDropPulse .9s ease-in-out infinite}
+#dp-table tbody tr.dp-drag-before::before{top:-2px}
+#dp-table tbody tr.dp-drag-over::after{bottom:-2px}
+@keyframes dpDropPulse{0%,100%{opacity:1}50%{opacity:.55}}
+.dp-handle{cursor:grab;text-align:center;vertical-align:middle;width:32px;border-radius:6px;transition:background .15s}
+.dp-handle:hover{background:var(--s3)}
 .dp-handle:active{cursor:grabbing}
-.dp-grip{color:var(--tx3);font-size:14px;user-select:none;line-height:1}
+.dp-grip{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--tx3);
+  box-shadow:6px 0 0 var(--tx3),0 6px 0 var(--tx3),6px 6px 0 var(--tx3),0 12px 0 var(--tx3),6px 12px 0 var(--tx3);
+  margin:6px 5px;transition:background .15s,box-shadow .15s}
+.dp-handle:hover .dp-grip{background:var(--pri);
+  box-shadow:6px 0 0 var(--pri),0 6px 0 var(--pri),6px 6px 0 var(--pri),0 12px 0 var(--pri),6px 12px 0 var(--pri)}
 
 /* APPEARANCE / BG IMAGE */
 body.has-bg-img{background-size:cover!important;background-attachment:fixed!important;background-repeat:no-repeat!important;background-position:center!important}

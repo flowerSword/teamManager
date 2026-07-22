@@ -229,7 +229,7 @@ function renderDpGrid(){
       ondragleave="dpDragLeave(event,${i})"
       ondrop="dpDrop(event,${i})"
       ondragend="dpDragEnd(event)">
-    <td class="dp-handle" title="拖拽排序"><span class="dp-grip">⋮⋮</span></td>
+    <td class="dp-handle" title="拖拽排序"><span class="dp-grip"></span></td>
     <td><input class="fi" type="time" style="width:90px;display:inline-block" value="${s.start_time||''}" onchange="dpSlots[${i}].start_time=this.value">
       ~ <input class="fi" type="time" style="width:90px;display:inline-block" value="${s.end_time||''}" onchange="dpSlots[${i}].end_time=this.value"></td>
     <td><input class="fi" value="${esc(s.content||'')}" onchange="dpSlots[${i}].content=this.value" placeholder="这个时间段做什么"></td>
