@@ -174,16 +174,21 @@ function dpDragStart(e,i){
   if(tr){const rect=tr.getBoundingClientRect();e.dataTransfer.setDragImage(tr,rect.width/2,rect.height/2);}
 }
 
+let dpDragOverKey=null;
+
 function dpDragOver(e,i){
   e.preventDefault();
   if(dpDragIdx===null||dpDragIdx===i) return;
   const rows=document.querySelectorAll('#dp-table tbody tr');
-  if(!rows[i]) return;
+  const row=rows[i];
+  if(!row) return;
+  const rect=row.getBoundingClientRect();
+  const before=(e.clientY-rect.top)<rect.height/2;
+  const key=i+(before?'b':'a');
+  if(key===dpDragOverKey) return; // 位置未变化，跳过重复更新，避免闪烁
+  dpDragOverKey=key;
   rows.forEach(r=>r.classList.remove('dp-drag-over','dp-drag-before'));
-  const rect=rows[i].getBoundingClientRect();
-  const pos=e.clientY-rect.top;
-  if(pos<rect.height/2) rows[i].classList.add('dp-drag-before');
-  else rows[i].classList.add('dp-drag-over');
+  row.classList.add(before?'dp-drag-before':'dp-drag-over');
 }
 
 function dpDragLeave(e,i){
@@ -193,6 +198,7 @@ function dpDragLeave(e,i){
   const related=e.relatedTarget;
   if(related&&tr.contains(related)) return;
   tr.classList.remove('dp-drag-over','dp-drag-before');
+  dpDragOverKey=null;
 }
 
 function dpDrop(e,i){
@@ -206,6 +212,7 @@ function dpDrop(e,i){
   if(targetIdx>dpDragIdx) targetIdx--;
   dpSlots.splice(targetIdx,0,dpSlots.splice(dpDragIdx,1)[0]);
   dpDragIdx=null;
+  dpDragOverKey=null;
   renderDpGrid();
 }
 
@@ -214,6 +221,7 @@ function dpDragEnd(e){
   if(tr) tr.classList.remove('dp-dragging');
   document.querySelectorAll('#dp-table tbody tr').forEach(r=>r.classList.remove('dp-drag-over','dp-drag-before'));
   dpDragIdx=null;
+  dpDragOverKey=null;
 }
 
 function renderDpGrid(){
