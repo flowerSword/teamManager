@@ -158,14 +158,78 @@ async function saveReminderEditor(){
   }
 }
 
+
+// ── 拖拽排序支持 ──────────────────────────────
+let dpDragIdx=null;
+
+function dpDragStart(e,i){
+  // 阻止在输入框/按钮上误触拖拽
+  if(e.target.closest('input,button,select,textarea')){e.preventDefault();return;}
+  dpDragIdx=i;
+  const tr=e.currentTarget;
+  tr.classList.add('dp-dragging');
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain','');
+  // 设置拖拽图像为行本身，避免默认的幽灵图
+  if(tr){const rect=tr.getBoundingClientRect();e.dataTransfer.setDragImage(tr,rect.width/2,rect.height/2);}
+}
+
+function dpDragOver(e,i){
+  e.preventDefault();
+  if(dpDragIdx===null||dpDragIdx===i) return;
+  const rows=document.querySelectorAll('#dp-table tbody tr');
+  if(!rows[i]) return;
+  rows.forEach(r=>r.classList.remove('dp-drag-over','dp-drag-before'));
+  const rect=rows[i].getBoundingClientRect();
+  const pos=e.clientY-rect.top;
+  if(pos<rect.height/2) rows[i].classList.add('dp-drag-before');
+  else rows[i].classList.add('dp-drag-over');
+}
+
+function dpDragLeave(e,i){
+  // Over-parent checking: only act if truly leaving the row
+  const tr=e.currentTarget;
+  if(!tr) return;
+  const related=e.relatedTarget;
+  if(related&&tr.contains(related)) return;
+  tr.classList.remove('dp-drag-over','dp-drag-before');
+}
+
+function dpDrop(e,i){
+  e.preventDefault();
+  if(dpDragIdx===null||dpDragIdx===i) return;
+  const tr=e.target.closest('tr');
+  if(!tr) return;
+  const rect=tr.getBoundingClientRect();
+  const pos=e.clientY-rect.top;
+  let targetIdx=pos<rect.height/2?i:i+1;
+  if(targetIdx>dpDragIdx) targetIdx--;
+  dpSlots.splice(targetIdx,0,dpSlots.splice(dpDragIdx,1)[0]);
+  dpDragIdx=null;
+  renderDpGrid();
+}
+
+function dpDragEnd(e){
+  const tr=e.currentTarget;
+  if(tr) tr.classList.remove('dp-dragging');
+  document.querySelectorAll('#dp-table tbody tr').forEach(r=>r.classList.remove('dp-drag-over','dp-drag-before'));
+  dpDragIdx=null;
+}
+
 function renderDpGrid(){
   const grid=document.getElementById('dp-grid');
   if(!grid) return;
   if(!dpSlots.length){grid.innerHTML='<div class="empty">当天暂无计划，选择模板后点击"应用模板"生成时间段，或点击"添加时间段"手动新增</div>';return;}
-  grid.innerHTML=`<table><thead><tr><th style="width:210px">时间段</th><th>内容</th><th style="width:180px">关联任务</th><th style="width:150px">进度/工时</th><th style="width:60px">完成</th><th style="width:60px"></th></tr></thead><tbody>
+  grid.innerHTML=`<table id="dp-table"><thead><tr><th style="width:32px"></th><th style="width:210px">时间段</th><th>内容</th><th style="width:180px">关联任务</th><th style="width:150px">进度/工时</th><th style="width:60px">完成</th><th style="width:60px"></th></tr></thead><tbody>
   ${dpSlots.map((s,i)=>{
     const st=dpMyTasksCache.find(t=>String(t.id)===String(s.task_id));
-    return `<tr>
+    return `<tr draggable="true"
+      ondragstart="dpDragStart(event,${i})"
+      ondragover="dpDragOver(event,${i})"
+      ondragleave="dpDragLeave(event,${i})"
+      ondrop="dpDrop(event,${i})"
+      ondragend="dpDragEnd(event)">
+    <td class="dp-handle" title="拖拽排序"><span class="dp-grip">⋮⋮</span></td>
     <td><input class="fi" type="time" style="width:90px;display:inline-block" value="${s.start_time||''}" onchange="dpSlots[${i}].start_time=this.value">
       ~ <input class="fi" type="time" style="width:90px;display:inline-block" value="${s.end_time||''}" onchange="dpSlots[${i}].end_time=this.value"></td>
     <td><input class="fi" value="${esc(s.content||'')}" onchange="dpSlots[${i}].content=this.value" placeholder="这个时间段做什么"></td>
