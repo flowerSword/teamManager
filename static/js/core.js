@@ -15,7 +15,11 @@ const ICO={
 
 async function api(path,opts={}){
   try{
-    const r=await fetch('/api'+path,{headers:{'Content-Type':'application/json'},...opts});
+    const headers={'Content-Type':'application/json'};
+    // 管理员切换到"成员视图"后，所有请求都带上该标记；服务端据此把该管理员当作普通成员对待，
+    // 保证成员视图下看到的数据范围与真实成员完全一致（而不仅仅是前端界面切换）。
+    if(ME&&ME.is_admin&&VIEW_MODE==='member') headers['X-View-Mode']='member';
+    const r=await fetch('/api'+path,{headers,...opts});
     if(r.status===401){showLogin();return null;}
     if(r.status===204) return true;
     const ct=r.headers.get('content-type')||'';
@@ -41,21 +45,6 @@ async function loadCnHolidays(){
 function ganttDayMeta(dt){
   const wknd=dt.getDay()===0||dt.getDay()===6;
   return {weekend:wknd,holiday:CN_HOLIDAYS[toLocalDateStr(dt)]||null};
-}
-// One background-shading string reused across every Gantt row's .gantt-track
-// (holiday takes priority over weekend on the same day); no per-row recompute.
-function buildGanttBgMarkers(startDate,totalDays){
-  let out='';
-  for(let d=0;d<totalDays;d++){
-    const dt=new Date(startDate); dt.setDate(dt.getDate()+d);
-    const meta=ganttDayMeta(dt);
-    if(!meta.weekend&&!meta.holiday) continue;
-    const left=(d/totalDays*100).toFixed(3), width=Math.max(0.15,(1/totalDays*100)).toFixed(3);
-    const cls=meta.holiday?'gantt-holiday-mark':'gantt-wknd-mark';
-    const title=meta.holiday?` title="${esc(meta.holiday)}"`:'';
-    out+=`<div class="${cls}" style="left:${left}%;width:${width}%"${title}></div>`;
-  }
-  return out;
 }
 
 // ── APPEARANCE ────────────────────────────────────────────────
@@ -372,4 +361,91 @@ function toggleDropdown(id){
 document.addEventListener('click',e=>{
   if(!e.target.closest('.ms-dd')) document.querySelectorAll('.ms-dd-panel').forEach(p=>p.style.display='none');
 });
+
+// ── Fuzzy-search combobox (project/module pickers): fuzzy filter + per-user "常用" recommendations ──
+let _fsFields={};
+function fsFreqKey(fieldId){ return 'tm_fs_freq_'+(ME&&ME.username||'anon')+'_'+fieldId; }
+function fsFreqGet(fieldId){
+  try{return JSON.parse(localStorage.getItem(fsFreqKey(fieldId))||'{}');}catch{return {};}
+}
+function fsFreqBump(fieldId,value){
+  if(!value) return;
+  const freq=fsFreqGet(fieldId);
+  freq[value]=(freq[value]||0)+1;
+  try{localStorage.setItem(fsFreqKey(fieldId),JSON.stringify(freq));}catch{}
+}
+function fsMatch(query,target){
+  if(!query) return true;
+  const q=query.toLowerCase(), t=(target||'').toLowerCase();
+  let qi=0;
+  for(let ti=0;ti<t.length&&qi<q.length;ti++) if(t[ti]===q[qi]) qi++;
+  return qi===q.length;
+}
+function fsScore(query,target){
+  if(!query) return 0;
+  const q=query.toLowerCase(), t=(target||'').toLowerCase();
+  return t.startsWith(q)?0:t.includes(q)?1:2;
+}
+function fsComboHtml(fieldId,options,curVal,placeholder){
+  _fsFields[fieldId]={options:(options||[]).slice()};
+  return `<div class="fs-combo">
+    <input type="hidden" id="${fieldId}" value="${esc(curVal||'')}">
+    <input type="text" id="${fieldId}-txt" class="fi" autocomplete="off" placeholder="${esc(placeholder||'')}"
+      value="${esc(curVal||'')}" oninput="fsRenderDD('${fieldId}')" onfocus="fsRenderDD('${fieldId}')"
+      onblur="setTimeout(()=>fsSyncText('${fieldId}'),150)">
+    <div id="${fieldId}-dd" class="fs-dd" style="display:none"></div>
+  </div>`;
+}
+function fsRenderDD(fieldId){
+  const f=_fsFields[fieldId]; if(!f) return;
+  document.querySelectorAll('.fs-dd').forEach(p=>{if(p.id!==fieldId+'-dd')p.style.display='none';});
+  const txtEl=document.getElementById(fieldId+'-txt');
+  const q=(txtEl?.value||'').trim();
+  const curVal=document.getElementById(fieldId)?.value||'';
+  const freq=fsFreqGet(fieldId);
+  let matches=f.options.filter(o=>fsMatch(q,o));
+  matches.sort((a,b)=>{
+    const sa=fsScore(q,a), sb=fsScore(q,b);
+    if(sa!==sb) return sa-sb;
+    const fa=freq[a]||0, fb=freq[b]||0;
+    if(fa!==fb) return fb-fa;
+    return a.localeCompare(b,'zh');
+  });
+  const recommended=!q?Object.keys(freq).filter(v=>f.options.includes(v)&&freq[v]>0)
+    .sort((a,b)=>freq[b]-freq[a]).slice(0,6):[];
+  const dd=document.getElementById(fieldId+'-dd');
+  if(!dd||!txtEl) return;
+  let html='';
+  if(!matches.length&&!recommended.length){
+    html=`<div class="fs-dd-empty">无匹配项</div>`;
+  }else{
+    if(recommended.length){
+      html+=`<div class="fs-dd-grp">常用</div>`;
+      html+=recommended.map(o=>`<div class="fs-dd-item${o===curVal?' sel':''}" data-val="${esc(o)}">⭐ ${esc(o)}</div>`).join('');
+      html+=`<div class="fs-dd-sep"></div>`;
+    }
+    const rest=matches.filter(o=>!recommended.includes(o));
+    html+=rest.slice(0,40).map(o=>`<div class="fs-dd-item${o===curVal?' sel':''}" data-val="${esc(o)}">${esc(o)}</div>`).join('');
+  }
+  dd.innerHTML=html;
+  dd.onclick=e=>{const it=e.target.closest('.fs-dd-item');if(it) fsPick(fieldId,it.dataset.val);};
+  const rect=txtEl.getBoundingClientRect();
+  dd.style.left=rect.left+'px';
+  dd.style.top=(rect.bottom+4)+'px';
+  dd.style.width=rect.width+'px';
+  dd.style.display='block';
+}
+// fixed-position dropdowns don't move with a scrolling ancestor (e.g. the modal body) — just close them
+document.addEventListener('scroll',()=>{document.querySelectorAll('.fs-dd').forEach(p=>p.style.display='none');},true);
+function fsPick(fieldId,value){
+  const h=document.getElementById(fieldId), t=document.getElementById(fieldId+'-txt'), dd=document.getElementById(fieldId+'-dd');
+  if(h) h.value=value;
+  if(t) t.value=value;
+  if(dd) dd.style.display='none';
+}
+function fsSyncText(fieldId){
+  const h=document.getElementById(fieldId), t=document.getElementById(fieldId+'-txt'), dd=document.getElementById(fieldId+'-dd');
+  if(h&&t) t.value=h.value;
+  if(dd) dd.style.display='none';
+}
 

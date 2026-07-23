@@ -143,7 +143,6 @@ function toggleAgMember(mid,checked){
 // Render gantt tracks - unified bar color (no task-type color)
 function renderGanttTracks(tasks,start,end,totalDays,todayOff,dayStep,agMonth,highlightDate){
   var out='';
-  var bgMarkers=buildGanttBgMarkers(start,totalDays);
   for(var i=0;i<tasks.length;i++){
     var t=tasks[i];
     var ts=new Date(t.plan_start_date),te=new Date(t.plan_end_date);
@@ -173,7 +172,6 @@ function renderGanttTracks(tasks,start,end,totalDays,todayOff,dayStep,agMonth,hi
       +' onclick="openLogPanel('+t.id+')" style="cursor:pointer">'
       +'<div class="gantt-name" title="'+safe+'">'+tbadge(t.task_type)+' '+safe+'</div>'
       +'<div class="gantt-track">'
-      +bgMarkers
       +'<div class="gantt-bar" style="left:'+bl+'%;width:'+bw+'%;background:'+color+';opacity:'+(done?0.65:1)+'" title="'+safe+'">'+(t.progress||0)+'%'+(t.estimated_days?' (预估'+t.estimated_days+'天)':'')+'</div>'
       +mk+tl+'</div></div>';
   }
@@ -195,13 +193,14 @@ function buildDayHeaders(start, totalDays, dayStep, agMonth){
     const meta=ganttDayMeta(dt);
     const lbl=agMonth?dt.getDate():(dt.getMonth()+1)+'/'+dt.getDate();
     const dayCls=(isToday?' today':'')+(meta.holiday?' holiday':meta.weekend?' weekend':'');
-    const dayTitle=meta.holiday?' title="'+esc(meta.holiday)+'"':'';
-    hdrs+='<div class="gantt-day'+dayCls+'" style="flex:'+dayStep+';min-width:'+(agMonth?'18px':'22px')+'"'+dayTitle+'>'+lbl+'</div>';
+    const dayTitle=meta.holiday?' title="'+esc(meta.holiday)+'"':(meta.weekend?' title="周末"':'');
+    const holTag=(dayStep===1&&meta.holiday)?'<div class="gantt-day-tag">'+esc(meta.holiday.slice(0,2))+'</div>':'';
+    hdrs+='<div class="gantt-day'+dayCls+'" style="flex:'+dayStep+';min-width:'+(agMonth?'18px':'22px')+'"'+dayTitle+'><div class="gantt-day-num">'+lbl+'</div>'+holTag+'</div>';
   }
   return hdrs;
 }
 
-const GANTT_LEGEND='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:12px">'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82f6"></span> 进行中</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#047857"></span> 已完成</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dc2626"></span> 有风险</span>'+'<span><span style="display:inline-block;width:6px;height:14px;background:rgba(16,185,129,.55);vertical-align:middle"></span> 有进展</span>'+'<span><span style="display:inline-block;width:6px;height:14px;background:rgba(251,191,36,.85);vertical-align:middle"></span> 高亮日</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(148,163,184,.4)"></span> 周末</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(239,68,68,.4)"></span> 法定节假日</span>'+'</div>';
+const GANTT_LEGEND='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:12px">'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82f6"></span> 进行中</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#047857"></span> 已完成</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dc2626"></span> 有风险</span>'+'<span><span style="display:inline-block;width:6px;height:14px;background:rgba(16,185,129,.55);vertical-align:middle"></span> 有进展</span>'+'<span><span style="display:inline-block;width:6px;height:14px;background:rgba(251,191,36,.85);vertical-align:middle"></span> 高亮日</span>'+'<span><span class="gantt-day weekend" style="display:inline-block;padding:0 5px">6</span> 周末（日期加粗变色）</span>'+'<span><span class="gantt-day holiday" style="display:inline-block;padding:0 5px">1</span> 法定节假日</span>'+'</div>';
 
 async function loadAdminGantt(){
   if(!agShowAll&&agMembers.length===0){document.getElementById('ag-content').innerHTML='<div class="empty" style="padding:40px">未选择任何成员</div>';return;}

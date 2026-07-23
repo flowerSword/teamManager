@@ -165,15 +165,30 @@ textarea.fi{resize:vertical;min-height:64px}
 @keyframes toIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
 .hidden{display:none!important}
 
+/* Fuzzy-search combobox (project/module pickers) */
+.fs-combo{position:relative}
+.fs-dd{position:fixed;z-index:1200;background:var(--s2);
+  border:1px solid var(--border);border-radius:8px;padding:4px;max-height:220px;overflow:auto;
+  box-shadow:0 4px 16px rgba(0,0,0,.25)}
+.fs-dd-item{padding:6px 8px;border-radius:6px;font-size:13px;cursor:pointer;color:var(--tx)}
+.fs-dd-item:hover,.fs-dd-item.sel{background:var(--pri);color:#fff}
+.fs-dd-grp{font-size:11px;color:var(--tx3);padding:3px 8px}
+.fs-dd-sep{height:1px;background:var(--border);margin:4px 2px}
+.fs-dd-empty{padding:8px;font-size:12px;color:var(--tx3);text-align:center}
+
 /* GANTT */
 .gantt-wrap{overflow-x:auto;font-size:12px}
 .gantt-hdr{display:flex;border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:4px}
 .gantt-label{width:280px;flex-shrink:0;color:var(--tx2);font-weight:600}
 .gantt-days{display:flex;flex:1;gap:0}
-.gantt-day{flex:1;text-align:center;color:var(--tx3);font-size:10px;min-width:20px}
+.gantt-day{flex:1;text-align:center;color:var(--tx3);font-size:10px;min-width:20px;padding:1px 0 2px}
+.gantt-day-num{line-height:1.3}
+.gantt-day-tag{font-size:8px;line-height:1.1;font-weight:700;color:#dc2626;white-space:nowrap;overflow:hidden}
 .gantt-day.today{color:var(--pri);font-weight:700}
-.gantt-day.weekend{opacity:.55}
-.gantt-day.holiday{color:var(--warn);font-weight:700;opacity:1}
+.gantt-day.weekend{color:#3b82f6;font-weight:700}
+.gantt-day.holiday{color:#dc2626;font-weight:700}
+.gantt-day.holiday .gantt-day-tag{color:#dc2626}
+.gantt-day.today.holiday{color:var(--pri)}
 .gantt-row{display:flex;align-items:flex-start;padding:4px 0;border-bottom:1px solid rgba(51,65,85,.3)}
 .gantt-row:hover{background:var(--row-hover)}
 .gantt-row-hl{background:rgba(251,191,36,.1);border-left:3px solid #fbbf24;}
@@ -185,8 +200,6 @@ textarea.fi{resize:vertical;min-height:64px}
   transition:opacity .15s;cursor:pointer}
 .gantt-bar:hover{opacity:.85}
 .gantt-today-line{position:absolute;top:0;bottom:0;width:1px;background:rgba(239,68,68,.6);z-index:2}
-.gantt-wknd-mark{position:absolute;top:0;bottom:0;background:rgba(148,163,184,.14);pointer-events:none}
-.gantt-holiday-mark{position:absolute;top:0;bottom:0;background:rgba(239,68,68,.16);pointer-events:none}
 .type-REQUIREMENT{background:linear-gradient(90deg,#1d4ed8,#3b82f6)}
 .type-ISSUE{background:linear-gradient(90deg,#b91c1c,#ef4444)}
 .type-ONSITE{background:linear-gradient(90deg,#0e7490,#06b6d4)}

@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════
 // TASK LIST (共用，admin全组，member自己的)
 // ════════════════════════════════════════════
-let taskTab='REQUIREMENT', taskPage=1, taskFilter=[], taskDmFilter='', taskNoFilter='', taskAssigneeFilter='', taskAllCache=[];
+let taskTab='REQUIREMENT', taskPage=1, taskFilter=[], taskDmFilter='', taskNoFilter='', taskAssigneeFilter='', taskProjectFilter='', taskModuleFilter='', taskAllCache=[];
 async function renderMyTasks(){
   document.getElementById('tb-title').textContent='我的任务';
   renderTaskList(false);
@@ -29,6 +29,8 @@ function renderTaskList(isAdmin){
     <div class="fbar" style="flex-wrap:wrap;align-items:center;gap:10px">
       <div id="task-status-filter" style="display:flex;gap:6px;flex-wrap:wrap"></div>
       <div id="task-assignee-filter"></div>
+      <div id="task-project-filter"></div>
+      <div id="task-module-filter"></div>
       <div id="task-dm-filter"></div>
       <div id="task-no-filter"></div>
       <span style="color:var(--tx3);font-size:13px" id="task-count"></span>
@@ -51,6 +53,8 @@ async function loadTaskTable(isAdmin, page){
   taskAllCache=await GET(endpoint)||[];
   taskFilter=taskFilter.filter(s=>taskStatusesFor(taskTab).includes(s));
   if(taskAssigneeFilter && !taskAllCache.some(t=>t.assignee_name===taskAssigneeFilter)) taskAssigneeFilter='';
+  if(taskProjectFilter && !taskAllCache.some(t=>t.project_name===taskProjectFilter)) taskProjectFilter='';
+  if(taskModuleFilter && !taskAllCache.some(t=>t.module===taskModuleFilter)) taskModuleFilter='';
   renderTaskFilterBar(isAdmin);
   renderTaskRows(isAdmin);
 }
@@ -64,9 +68,9 @@ function renderTaskFilterBar(isAdmin){
     sfEl.innerHTML=`<div class="ms-dd" style="position:relative;display:inline-block">
       <button type="button" class="btn btn-sm" style="min-width:130px;text-align:left" onclick="toggleDropdown('task-status-dd')">状态：${label} ▾</button>
       <div id="task-status-dd" class="ms-dd-panel" style="display:${wasOpen?'block':'none'};position:absolute;top:100%;left:0;margin-top:4px;z-index:20;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px;min-width:170px;max-height:260px;overflow:auto;box-shadow:0 4px 16px rgba(0,0,0,.25)">
-        ${statusOpts.map(s=>
+        ${groupStatusesByLabel(statusOpts).map(g=>
           `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:4px 4px">
-            <input type="checkbox" value="${s}" ${taskFilter.includes(s)?'checked':''} onchange="toggleTaskStatusFilter('${s}',this.checked,${isAdmin})" style="accent-color:var(--pri)"> ${SZ[s]||s}</label>`
+            <input type="checkbox" value="${g.codes.join(',')}" ${g.codes.every(c=>taskFilter.includes(c))?'checked':''} onchange="toggleTaskStatusFilter('${g.codes.join(',')}',this.checked,${isAdmin})" style="accent-color:var(--pri)"> ${g.label}</label>`
         ).join('')}
         <div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
           <button type="button" class="btn btn-sm" onclick="taskFilter=[];taskPage=1;renderTaskFilterBar(${isAdmin});renderTaskRows(${isAdmin})">清空</button>
@@ -93,6 +97,22 @@ function renderTaskFilterBar(isAdmin){
       ${names.map(n=>`<option value="${esc(n)}" ${taskAssigneeFilter===n?'selected':''}>${esc(n)}</option>`).join('')}
     </select>`;
   }
+  const pjEl=document.getElementById('task-project-filter');
+  if(pjEl){
+    const projects=[...new Set(taskAllCache.map(t=>t.project_name).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh'));
+    pjEl.innerHTML=projects.length?`<select class="fi" style="width:140px" onchange="taskProjectFilter=this.value;taskPage=1;renderTaskRows(${isAdmin})">
+      <option value="">全部项目</option>
+      ${projects.map(p=>`<option value="${esc(p)}" ${taskProjectFilter===p?'selected':''}>${esc(p)}</option>`).join('')}
+    </select>`:'';
+  }
+  const mdEl=document.getElementById('task-module-filter');
+  if(mdEl){
+    const modules=[...new Set(taskAllCache.map(t=>t.module).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh'));
+    mdEl.innerHTML=modules.length?`<select class="fi" style="width:140px" onchange="taskModuleFilter=this.value;taskPage=1;renderTaskRows(${isAdmin})">
+      <option value="">全部模块</option>
+      ${modules.map(m=>`<option value="${esc(m)}" ${taskModuleFilter===m?'selected':''}>${esc(m)}</option>`).join('')}
+    </select>`:'';
+  }
 }
 
 function renderTaskRows(isAdmin){
@@ -101,6 +121,8 @@ function renderTaskRows(isAdmin){
     (!taskFilter.length||taskFilter.includes(t.status)) &&
     (taskTab==='ONSITE'||!taskDmFilter||t.delivery_month===taskDmFilter) &&
     (!taskAssigneeFilter||t.assignee_name===taskAssigneeFilter) &&
+    (!taskProjectFilter||t.project_name===taskProjectFilter) &&
+    (!taskModuleFilter||t.module===taskModuleFilter) &&
     (!taskNoFilter||(t.requirement_no||'').toLowerCase().includes(taskNoFilter.toLowerCase())||(t.issue_no||'').toLowerCase().includes(taskNoFilter.toLowerCase())));
   const ct=document.getElementById('task-count');
   if(ct)ct.textContent=`共 ${filtered.length} 条`;
@@ -169,9 +191,19 @@ function renderTaskRows(isAdmin){
   </tbody></table>${pgr(p,pages,`(function(pg){taskPage=pg;renderTaskRows(${isAdmin})})`)}`;
 }
 
-function toggleTaskStatusFilter(status, checked, isAdmin){
-  if(checked){ if(!taskFilter.includes(status)) taskFilter.push(status); }
-  else { taskFilter=taskFilter.filter(s=>s!==status); }
+function groupStatusesByLabel(statusOpts){
+  const groups=[], idxByLabel={};
+  statusOpts.forEach(s=>{
+    const label=SZ[s]||s;
+    if(idxByLabel[label]===undefined){ idxByLabel[label]=groups.length; groups.push({label,codes:[s]}); }
+    else groups[idxByLabel[label]].codes.push(s);
+  });
+  return groups;
+}
+function toggleTaskStatusFilter(statusCsv, checked, isAdmin){
+  const codes=statusCsv.split(',');
+  if(checked){ codes.forEach(c=>{ if(!taskFilter.includes(c)) taskFilter.push(c); }); }
+  else { taskFilter=taskFilter.filter(s=>!codes.includes(s)); }
   taskPage=1; renderTaskFilterBar(isAdmin); renderTaskRows(isAdmin);
 }
 
@@ -192,10 +224,7 @@ function projectFieldHtml(type,t,opts){
   const cur=t.project_name||'';
   const list=cur&&!opts.includes(cur)?[...opts,cur]:opts;
   return `<div class="fgroup"><label class="flabel">所属项目 <span class="req">*</span></label>
-    <select id="tf-proj" class="fi">
-      <option value="">请选择</option>
-      ${list.map(v=>`<option value="${esc(v)}"${cur===v?' selected':''}>${esc(v)}</option>`).join('')}
-    </select></div>`;
+    ${fsComboHtml('tf-proj',list,cur,'输入关键字模糊搜索项目…')}</div>`;
 }
 
 function moduleFieldHtml(type,t,opts){
@@ -203,10 +232,7 @@ function moduleFieldHtml(type,t,opts){
   const cur=t.module||'';
   const list=cur&&!opts.includes(cur)?[...opts,cur]:opts;
   return `<div class="fgroup"><label class="flabel">模块</label>
-    <select id="tf-mod" class="fi">
-      <option value="">不选择</option>
-      ${list.map(v=>`<option value="${esc(v)}"${cur===v?' selected':''}>${esc(v)}</option>`).join('')}
-    </select></div>`;
+    ${fsComboHtml('tf-mod',list,cur,'输入关键字模糊搜索模块…')}</div>`;
 }
 
 // ════════════════════════════════════════════
@@ -302,7 +328,9 @@ async function openTaskModal(id){
       requirement_no:gv('tf-rno')||null,issue_no:gv('tf-ino')||null,
     };
     const res=id?await PUT('/tasks/'+id,payload):await POST('/tasks',payload);
-    if(res){toast(id?'更新成功':'创建成功');closeModal();
+    if(res){toast(id?'更新成功':'创建成功');
+      fsFreqBump('tf-proj',payload.project_name);fsFreqBump('tf-mod',payload.module);
+      closeModal();
       ME.is_admin?loadTaskTable(true):loadTaskTable(false);}
   },true);
 }
@@ -533,11 +561,10 @@ async function loadGantt(){
     const meta=ganttDayMeta(dt);
     const lbl=ganttMonth?dt.getDate():(dt.getMonth()+1)+'/'+dt.getDate();
     const dayCls=(isToday?' today':'')+(meta.holiday?' holiday':meta.weekend?' weekend':'');
-    const dayTitle=meta.holiday?` title="${esc(meta.holiday)}"`:'';
-    dayHdrs+=`<div class="gantt-day${dayCls}" style="flex:${dayStep};min-width:${ganttMonth?'20px':'24px'}"${dayTitle}>${lbl}</div>`;
+    const dayTitle=meta.holiday?` title="${esc(meta.holiday)}"`:(meta.weekend?' title="周末"':'');
+    const holTag=(dayStep===1&&meta.holiday)?`<div class="gantt-day-tag">${esc(meta.holiday.slice(0,2))}</div>`:'';
+    dayHdrs+=`<div class="gantt-day${dayCls}" style="flex:${dayStep};min-width:${ganttMonth?'20px':'24px'}"${dayTitle}><div class="gantt-day-num">${lbl}</div>${holTag}</div>`;
   }
-  const bgMarkers=buildGanttBgMarkers(startDate,totalDays);
-
   const COLORS={'REQUIREMENT':'#1d4ed8','ISSUE':'#b91c1c','ONSITE':'#0e7490','OTHER':'#6d28d9','QUALITY':'#15803d'};
 
   const rows=tasks.map(t=>{
@@ -551,7 +578,6 @@ async function loadGantt(){
     return`<div class="gantt-row" onclick="openLogPanel(${t.id})" style="cursor:pointer">
       <div class="gantt-name" title="${esc(t.title)}">${tbadge(t.task_type)} ${esc(t.title)}</div>
       <div class="gantt-track">
-        ${bgMarkers}
         <div class="gantt-bar" style="left:${barLeft}%;width:${barWidth}%;background:${done?'#047857':color};opacity:${done?.7:1}"
           title="${esc(t.title)} | ${t.plan_start_date} ~ ${t.plan_end_date} | ${t.progress||0}%">
           ${t.progress||0}%
@@ -566,8 +592,8 @@ async function loadGantt(){
     <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;font-size:12px">
       ${Object.entries(TZ).map(([k,v])=>`<span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:${COLORS[k]};display:inline-block"></span>${v}</span>`).join('')}
       <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:#92400e;display:inline-block"></span>有风险</span>
-      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(148,163,184,.4);display:inline-block"></span>周末</span>
-      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(239,68,68,.4);display:inline-block"></span>法定节假日</span>
+      <span style="display:flex;align-items:center;gap:4px"><span class="gantt-day weekend" style="display:inline-block;padding:0 5px;font-size:11px">6</span>周末（日期加粗变色）</span>
+      <span style="display:flex;align-items:center;gap:4px"><span class="gantt-day holiday" style="display:inline-block;padding:0 5px;font-size:11px">1</span>法定节假日</span>
       <span style="color:var(--tx3)">· 点击任务行可查看/添加日志</span>
     </div>
     <div class="gantt-wrap">

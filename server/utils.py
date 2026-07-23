@@ -2,7 +2,7 @@
 """Cross-cutting helpers: date/time, auth decorators, risk logic, LAN IP detection."""
 import socket, datetime
 from functools import wraps
-from flask import session, jsonify
+from flask import session, jsonify, request
 from .db import get_db, r2d
 
 
@@ -60,7 +60,13 @@ def current_user():
     uid=session.get('user_id')
     if not uid: return None
     row=get_db().execute("SELECT * FROM members WHERE id=? AND is_active=1",(uid,)).fetchone()
-    return r2d(row)
+    u=r2d(row)
+    # 管理员在前端切换到"成员视图"时，请求会带上 X-View-Mode: member —
+    # 此时把该管理员当作普通成员处理，所有依据 is_admin 做的可见范围判断随之收窄，
+    # 而不只是前端换了一套菜单/页面（否则管理员账号在"成员视图"下仍会读到全组织数据）。
+    if u and u.get('is_admin') and request.headers.get('X-View-Mode')=='member':
+        u=dict(u); u['is_admin']=0
+    return u
 
 
 def login_required(f):
