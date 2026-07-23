@@ -391,16 +391,24 @@ function fsComboHtml(fieldId,options,curVal,placeholder){
   return `<div class="fs-combo">
     <input type="hidden" id="${fieldId}" value="${esc(curVal||'')}">
     <input type="text" id="${fieldId}-txt" class="fi" autocomplete="off" placeholder="${esc(placeholder||'')}"
-      value="${esc(curVal||'')}" oninput="fsRenderDD('${fieldId}')" onfocus="fsRenderDD('${fieldId}')"
+      value="${esc(curVal||'')}" oninput="fsRenderDD('${fieldId}')" onfocus="fsOnFocus('${fieldId}')"
       onblur="setTimeout(()=>fsSyncText('${fieldId}'),150)">
     <div id="${fieldId}-dd" class="fs-dd" style="display:none"></div>
   </div>`;
 }
-function fsRenderDD(fieldId){
+// Focusing the field (a click, same as opening a native <select>) always browses the
+// full option list — it must NOT be pre-filtered by whatever value is already selected.
+// Typing narrows it down via fuzzy search; select() lets typing replace the old value outright.
+function fsOnFocus(fieldId){
+  const txtEl=document.getElementById(fieldId+'-txt');
+  if(txtEl) txtEl.select();
+  fsRenderDD(fieldId,'');
+}
+function fsRenderDD(fieldId,forceQuery){
   const f=_fsFields[fieldId]; if(!f) return;
   document.querySelectorAll('.fs-dd').forEach(p=>{if(p.id!==fieldId+'-dd')p.style.display='none';});
   const txtEl=document.getElementById(fieldId+'-txt');
-  const q=(txtEl?.value||'').trim();
+  const q=forceQuery!==undefined?forceQuery:(txtEl?.value||'').trim();
   const curVal=document.getElementById(fieldId)?.value||'';
   const freq=fsFreqGet(fieldId);
   let matches=f.options.filter(o=>fsMatch(q,o));

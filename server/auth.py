@@ -22,7 +22,7 @@ def login():
     else:
         pw_match = (m['password'] == hash_pw(raw_pw))
     if not pw_match: return jsonify({'error':'密码错误'}),401
-    session['user_id']=m['id']; m.pop('password',None)
+    session['user_id']=m['id']; session.permanent=True; m.pop('password',None)
     return jsonify({'user':m})
 
 

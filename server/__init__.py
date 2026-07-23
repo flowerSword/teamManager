@@ -6,6 +6,7 @@ before this package is imported (the root app.py entry point does this) —
 Flask/openpyxl are not pip-installed, only available via wheels/.
 """
 import os, time
+from datetime import timedelta
 from flask import Flask, send_file, make_response
 
 from .db import DB_PATH, BASE_DIR, init_db, close_db  # noqa: F401  (re-exported for app.py)
@@ -17,6 +18,10 @@ def create_app():
     app = Flask(__name__, static_folder=STATIC, static_url_path='/static')
     app.secret_key = 'team-mgr-2025-v3'
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # disable static file cache
+    # 4小时无操作自动登出：session.permanent（auth.py 登录时设置）+ SESSION_REFRESH_EACH_REQUEST
+    # (Flask 默认开启) 让每次请求都重新签发 cookie，形成滑动过期；itsdangerous 校验签名时间戳，
+    # 服务端强制失效，不依赖浏览器自行删除 cookie。
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=4)
 
     app.teardown_appcontext(close_db)
 
