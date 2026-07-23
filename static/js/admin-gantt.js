@@ -143,6 +143,7 @@ function toggleAgMember(mid,checked){
 // Render gantt tracks - unified bar color (no task-type color)
 function renderGanttTracks(tasks,start,end,totalDays,todayOff,dayStep,agMonth,highlightDate){
   var out='';
+  var bgMarkers=buildGanttBgMarkers(start,totalDays);
   for(var i=0;i<tasks.length;i++){
     var t=tasks[i];
     var ts=new Date(t.plan_start_date),te=new Date(t.plan_end_date);
@@ -172,6 +173,7 @@ function renderGanttTracks(tasks,start,end,totalDays,todayOff,dayStep,agMonth,hi
       +' onclick="openLogPanel('+t.id+')" style="cursor:pointer">'
       +'<div class="gantt-name" title="'+safe+'">'+tbadge(t.task_type)+' '+safe+'</div>'
       +'<div class="gantt-track">'
+      +bgMarkers
       +'<div class="gantt-bar" style="left:'+bl+'%;width:'+bw+'%;background:'+color+';opacity:'+(done?0.65:1)+'" title="'+safe+'">'+(t.progress||0)+'%'+(t.estimated_days?' (预估'+t.estimated_days+'天)':'')+'</div>'
       +mk+tl+'</div></div>';
   }
@@ -190,16 +192,20 @@ function buildDayHeaders(start, totalDays, dayStep, agMonth){
   for(let d=0;d<totalDays;d+=dayStep){
     const dt=new Date(start); dt.setDate(dt.getDate()+d);
     const isToday=toLocalDateStr(dt)===today();
+    const meta=ganttDayMeta(dt);
     const lbl=agMonth?dt.getDate():(dt.getMonth()+1)+'/'+dt.getDate();
-    hdrs+=`<div class="gantt-day${isToday?' today':''}" style="flex:${dayStep};min-width:${agMonth?'18px':'22px'}">${lbl}</div>`;
+    const dayCls=(isToday?' today':'')+(meta.holiday?' holiday':meta.weekend?' weekend':'');
+    const dayTitle=meta.holiday?' title="'+esc(meta.holiday)+'"':'';
+    hdrs+='<div class="gantt-day'+dayCls+'" style="flex:'+dayStep+';min-width:'+(agMonth?'18px':'22px')+'"'+dayTitle+'>'+lbl+'</div>';
   }
   return hdrs;
 }
 
-const GANTT_LEGEND='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:12px">'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82f6"></span> 进行中</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#047857"></span> 已完成</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dc2626"></span> 有风险</span>'+'<span><span style="display:inline-block;width:6px;height:14px;background:rgba(16,185,129,.55);vertical-align:middle"></span> 有进展</span>'+'<span><span style="display:inline-block;width:6px;height:14px;background:rgba(251,191,36,.85);vertical-align:middle"></span> 高亮日</span>'+'</div>';
+const GANTT_LEGEND='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:12px">'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82f6"></span> 进行中</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#047857"></span> 已完成</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dc2626"></span> 有风险</span>'+'<span><span style="display:inline-block;width:6px;height:14px;background:rgba(16,185,129,.55);vertical-align:middle"></span> 有进展</span>'+'<span><span style="display:inline-block;width:6px;height:14px;background:rgba(251,191,36,.85);vertical-align:middle"></span> 高亮日</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(148,163,184,.4)"></span> 周末</span>'+'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(239,68,68,.4)"></span> 法定节假日</span>'+'</div>';
 
 async function loadAdminGantt(){
   if(!agShowAll&&agMembers.length===0){document.getElementById('ag-content').innerHTML='<div class="empty" style="padding:40px">未选择任何成员</div>';return;}
+  await loadCnHolidays();
   var mids=(!agShowAll||agMembers.length)?agMembers.join(','):'';
   var gn=agFilterGroup||currentGroup||ME.group_name;
   // 如果 gn 为空（旧数据库 admin 无组），自动取第一个活跃成员的组

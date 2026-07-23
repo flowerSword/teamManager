@@ -9,10 +9,19 @@ from .excel import mkhdr, rf, title_cell
 
 tasks_bp = Blueprint('tasks', __name__)
 
+# Task types that must carry a (admin-configured) project name — see /api/config's
+# project_options key. OTHER is intentionally excluded.
+PROJECT_REQUIRED_TYPES = ('REQUIREMENT', 'ISSUE', 'ONSITE', 'QUALITY')
+
 
 def task_where(u, extra='', extra_params=()):
     if u['is_admin']: w,p="1=1",[]
-    else: w,p="group_name=?",[u['group_name']]
+    else:
+        # Own-group tasks, PLUS anything the user personally created or is assigned —
+        # without this OR, a can_cross_group member who creates/is assigned a task
+        # outside their own group_name loses all visibility of it here (团队视图,
+        # 风险任务, 今日待办), even though /api/tasks/mine already handles this correctly.
+        w,p="(group_name=? OR assignee_id=? OR created_by=?)",[u['group_name'],u['id'],u['id']]
     if extra: w+=" AND "+extra; p+=list(extra_params)
     return w,p
 
@@ -89,6 +98,9 @@ def task_stats(gn):
 @login_required
 def add_task():
     u=current_user(); d=dict(request.json); db=get_db()
+    task_type=d.get('task_type','REQUIREMENT')
+    if task_type in PROJECT_REQUIRED_TYPES and not d.get('project_name'):
+        return jsonify({'error':'项目为必填项'}),400
     # Auto-assign to self if not specified
     aid=d.get('assignee_id') or u['id']
     assignee=r2d(db.execute("SELECT id,name,group_name FROM members WHERE id=?",(aid,)).fetchone())
@@ -104,15 +116,15 @@ def add_task():
     c=db.execute("""INSERT INTO tasks(title,description,task_type,status,priority,severity,issue_type,
         assignee_id,assignee_name,reporter_name,group_name,plan_start_date,plan_end_date,actual_end_date,
         delivery_month,progress,has_risk,risk_description,version,module,location,estimated_days,parent_task_id,
-        requirement_no,issue_no,created_by)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (d.get('title'),d.get('description'),d.get('task_type','REQUIREMENT'),
+        requirement_no,issue_no,project_name,created_by)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (d.get('title'),d.get('description'),task_type,
          d.get('status','PENDING'),d.get('priority','MEDIUM'),d.get('severity'),d.get('issue_type'),
          d.get('assignee_id'),d.get('assignee_name'),d.get('reporter_name'),d.get('group_name'),
          d.get('plan_start_date'),d.get('plan_end_date'),d.get('actual_end_date'),
          d.get('delivery_month'),d.get('progress',0),d.get('has_risk',0),d.get('risk_description'),
          d.get('version'),d.get('module'),d.get('location'),int(d.get('estimated_days') or 0),d.get('parent_task_id'),
-         d.get('requirement_no'),d.get('issue_no'),d.get('created_by')))
+         d.get('requirement_no'),d.get('issue_no'),d.get('project_name'),d.get('created_by')))
     db.commit()
     return jsonify(r2d(db.execute("SELECT * FROM tasks WHERE id=?",(c.lastrowid,)).fetchone())),201
 
@@ -146,12 +158,16 @@ def upd_task(tid):
     if d.get('status') in ('DELIVERED','COMPLETED','RESOLVED','CLOSED') and not d.get('actual_end_date'):
         d['actual_end_date']=today()
         if not d.get('progress'): d['progress']=100
+    new_type=keep('task_type')
+    new_project=keep('project_name')
+    if new_type in PROJECT_REQUIRED_TYPES and not new_project:
+        return jsonify({'error':'项目为必填项'}),400
     d=auto_risk(d); db.execute("""UPDATE tasks SET title=?,description=?,task_type=?,status=?,priority=?,
         severity=?,issue_type=?,assignee_id=?,assignee_name=?,reporter_name=?,group_name=?,plan_start_date=?,
         plan_end_date=?,actual_end_date=?,delivery_month=?,progress=?,has_risk=?,risk_description=?,
         version=?,module=?,location=?,estimated_days=?,parent_task_id=?,requirement_no=?,issue_no=?,
-        updated_at=? WHERE id=?""",
-        (keep('title'),d.get('description'),keep('task_type'),
+        project_name=?,updated_at=? WHERE id=?""",
+        (keep('title'),d.get('description'),new_type,
          keep('status'),keep('priority'),d.get('severity'),d.get('issue_type'),
          new_aid,keep('assignee_name'),d.get('reporter_name'),new_group,
          d.get('plan_start_date'),d.get('plan_end_date'),d.get('actual_end_date'),
@@ -159,7 +175,7 @@ def upd_task(tid):
          d.get('has_risk',0),d.get('risk_description'),
          d.get('version'),d.get('module'),d.get('location'),
          int(d.get('estimated_days') or existing.get('estimated_days') or 0),
-         keep('parent_task_id'),d.get('requirement_no'),d.get('issue_no'),now_str(),tid))
+         keep('parent_task_id'),d.get('requirement_no'),d.get('issue_no'),new_project,now_str(),tid))
     db.commit()
     return jsonify(r2d(db.execute("SELECT * FROM tasks WHERE id=?",(tid,)).fetchone()))
 
@@ -431,16 +447,16 @@ def exp_tasks(gn):
     s=request.args.get('startMonth',''); e=request.args.get('endMonth','')
     rows=rs(get_db().execute("SELECT * FROM tasks WHERE group_name=? AND task_type=? AND delivery_month>=? AND delivery_month<=? ORDER BY delivery_month",(gn,tt,s,e)).fetchall())
     tname=TYPE_ZH.get(tt,tt); wb=Workbook(); ws=wb.active; ws.title=tname+"报表"
-    title_cell(ws,"{} {} ({} ~ {})".format(gn,tname,s,e),12)
-    mkhdr(ws,3,['标题','类型','模块','版本','负责人','优先级','状态','进度','计划开始','计划结束','实际完成','风险'],
-          [32,10,12,10,10,8,10,8,12,12,12,22])
+    title_cell(ws,"{} {} ({} ~ {})".format(gn,tname,s,e),13)
+    mkhdr(ws,3,['标题','类型','项目','模块','版本','负责人','优先级','状态','进度','计划开始','计划结束','实际完成','风险'],
+          [32,10,14,12,10,10,8,10,8,12,12,12,22])
     for r in rows:
         risk=('⚠ '+(r.get('risk_description') or '有风险')) if r.get('has_risk') else '正常'
-        ws.append([r['title'],TYPE_ZH.get(r.get('task_type',''),''),r.get('module',''),r.get('version',''),
+        ws.append([r['title'],TYPE_ZH.get(r.get('task_type',''),''),r.get('project_name',''),r.get('module',''),r.get('version',''),
                    r.get('assignee_name',''),r.get('priority',''),STATUS_ZH.get(r.get('status',''),r.get('status','')),
                    "{}%".format(r.get('progress',0)),r.get('plan_start_date',''),r.get('plan_end_date',''),r.get('actual_end_date',''),risk])
         if r.get('has_risk'):
-            for col in range(1,13): ws.cell(row=ws.max_row,column=col).fill=rf()
+            for col in range(1,14): ws.cell(row=ws.max_row,column=col).fill=rf()
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
     return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True,download_name="{}_{}_{}_{}.xlsx".format(gn,tname,s,e))

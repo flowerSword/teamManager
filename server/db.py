@@ -234,6 +234,10 @@ CREATE INDEX IF NOT EXISTS idx_ota ON overtime_attachments(overtime_id);
         db.commit()
     except: pass
     try:
+        db.execute("ALTER TABLE tasks ADD COLUMN project_name TEXT")
+        db.commit()
+    except: pass
+    try:
         admin_pw = hash_pw('admin123')
         default_pw = hash_pw('123456')
         db.execute("INSERT OR IGNORE INTO members(name,username,password,role,group_name,is_admin) VALUES(?,?,?,?,?,?)",
@@ -275,5 +279,44 @@ CREATE INDEX IF NOT EXISTS idx_ota ON overtime_attachments(overtime_id);
         for row in db.execute("SELECT DISTINCT group_name FROM members WHERE group_name IS NOT NULL AND group_name!=''").fetchall():
             db.execute("INSERT OR IGNORE INTO groups(name) VALUES(?)", (row[0],))
         db.commit()
+    except: pass
+    # Migration: seed a best-effort CN public holiday calendar (once) for the Gantt
+    # weekend/holiday markers. Dates are approximate/for reference only — admins can
+    # freely add/edit/remove them from 配置管理 once the State Council publishes the
+    # official schedule for a given year (esp. years not yet announced).
+    try:
+        seeded = db.execute("SELECT value FROM system_config WHERE key='cn_holidays'").fetchone()
+        if not seeded:
+            import json as _json
+            default_holidays = {
+                '2024-01-01':'元旦','2024-02-10':'春节','2024-02-11':'春节','2024-02-12':'春节',
+                '2024-02-13':'春节','2024-02-14':'春节','2024-02-15':'春节','2024-02-16':'春节','2024-02-17':'春节',
+                '2024-04-04':'清明节','2024-04-05':'清明节','2024-04-06':'清明节',
+                '2024-05-01':'劳动节','2024-05-02':'劳动节','2024-05-03':'劳动节','2024-05-04':'劳动节','2024-05-05':'劳动节',
+                '2024-06-08':'端午节','2024-06-09':'端午节','2024-06-10':'端午节',
+                '2024-09-15':'中秋节','2024-09-16':'中秋节','2024-09-17':'中秋节',
+                '2024-10-01':'国庆节','2024-10-02':'国庆节','2024-10-03':'国庆节','2024-10-04':'国庆节',
+                '2024-10-05':'国庆节','2024-10-06':'国庆节','2024-10-07':'国庆节',
+                '2025-01-01':'元旦',
+                '2025-01-28':'春节','2025-01-29':'春节','2025-01-30':'春节','2025-01-31':'春节',
+                '2025-02-01':'春节','2025-02-02':'春节','2025-02-03':'春节','2025-02-04':'春节',
+                '2025-04-04':'清明节','2025-04-05':'清明节','2025-04-06':'清明节',
+                '2025-05-01':'劳动节','2025-05-02':'劳动节','2025-05-03':'劳动节','2025-05-04':'劳动节','2025-05-05':'劳动节',
+                '2025-05-31':'端午节','2025-06-01':'端午节','2025-06-02':'端午节',
+                '2025-10-01':'国庆节','2025-10-02':'国庆节','2025-10-03':'国庆节','2025-10-04':'国庆节',
+                '2025-10-05':'国庆节','2025-10-06':'中秋节','2025-10-07':'国庆节','2025-10-08':'国庆节',
+                '2026-01-01':'元旦',
+                '2026-02-16':'春节','2026-02-17':'春节','2026-02-18':'春节','2026-02-19':'春节',
+                '2026-02-20':'春节','2026-02-21':'春节','2026-02-22':'春节',
+                '2026-04-04':'清明节','2026-04-05':'清明节','2026-04-06':'清明节',
+                '2026-05-01':'劳动节','2026-05-02':'劳动节','2026-05-03':'劳动节','2026-05-04':'劳动节','2026-05-05':'劳动节',
+                '2026-06-19':'端午节','2026-06-20':'端午节','2026-06-21':'端午节',
+                '2026-09-25':'中秋节','2026-09-26':'中秋节','2026-09-27':'中秋节',
+                '2026-10-01':'国庆节','2026-10-02':'国庆节','2026-10-03':'国庆节','2026-10-04':'国庆节',
+                '2026-10-05':'国庆节','2026-10-06':'国庆节','2026-10-07':'国庆节',
+            }
+            db.execute("INSERT OR IGNORE INTO system_config(key,value,updated_at) VALUES('cn_holidays',?,datetime('now','localtime'))",
+                       (_json.dumps(default_holidays, ensure_ascii=False),))
+            db.commit()
     except: pass
     db.close()

@@ -10,6 +10,7 @@ const ICO={
   gantt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>',
   team:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   rpt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  cfg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
 };
 
 async function api(path,opts={}){
@@ -30,6 +31,32 @@ const GET=p=>api(p);
 const POST=(p,d)=>api(p,{method:'POST',body:JSON.stringify(d)});
 const PUT=(p,d)=>api(p,{method:'PUT',body:JSON.stringify(d)});
 const DEL=p=>api(p,{method:'DELETE'});
+
+// ── GANTT: weekend / CN holiday markers (shared by tasks.js & admin-gantt.js) ──
+let CN_HOLIDAYS={};
+async function loadCnHolidays(){
+  const cfg=await GET('/config')||{};
+  try{CN_HOLIDAYS=JSON.parse(cfg.cn_holidays||'{}');}catch{CN_HOLIDAYS={};}
+}
+function ganttDayMeta(dt){
+  const wknd=dt.getDay()===0||dt.getDay()===6;
+  return {weekend:wknd,holiday:CN_HOLIDAYS[toLocalDateStr(dt)]||null};
+}
+// One background-shading string reused across every Gantt row's .gantt-track
+// (holiday takes priority over weekend on the same day); no per-row recompute.
+function buildGanttBgMarkers(startDate,totalDays){
+  let out='';
+  for(let d=0;d<totalDays;d++){
+    const dt=new Date(startDate); dt.setDate(dt.getDate()+d);
+    const meta=ganttDayMeta(dt);
+    if(!meta.weekend&&!meta.holiday) continue;
+    const left=(d/totalDays*100).toFixed(3), width=Math.max(0.15,(1/totalDays*100)).toFixed(3);
+    const cls=meta.holiday?'gantt-holiday-mark':'gantt-wknd-mark';
+    const title=meta.holiday?` title="${esc(meta.holiday)}"`:'';
+    out+=`<div class="${cls}" style="left:${left}%;width:${width}%"${title}></div>`;
+  }
+  return out;
+}
 
 // ── APPEARANCE ────────────────────────────────────────────────
 const THEMES={
@@ -271,8 +298,8 @@ function buildNav(){
     {k:'tasks',l:'任务管理',i:'task'},{k:'member-view',l:'成员视图',i:'team'},
     {k:'admin-gantt',l:'甘特图',i:'gantt'},{k:'progress',l:'进展记录',i:'task'},
     {k:'day-plan',l:'每日计划',i:'task'},{k:'overtime',l:'加班管理',i:'ci'},
-    {k:'team',l:'成员管理',i:'team'},{k:'reports',l:'报表中心',i:'rpt'},
-    {k:'help',l:'操作说明',i:'rpt'}
+    {k:'team',l:'成员管理',i:'team'},{k:'config-mgmt',l:'配置管理',i:'cfg'},
+    {k:'reports',l:'报表中心',i:'rpt'},{k:'help',l:'操作说明',i:'rpt'}
   ];
   var memberMenus=[
     {k:'dash',l:'我的工作台',i:'dash'},{k:'my-ci',l:'我的签到',i:'ci'},
@@ -310,7 +337,7 @@ function showPage(name){
   var map=isAdminView?{
     dash:renderAdminDash,ci:renderCi,tasks:renderTasks,team:renderTeam,reports:renderReports,
     profile:renderProfile,'member-view':renderMemberView,'admin-gantt':renderAdminGantt,progress:renderProgress,
-    'day-plan':renderDayPlan,overtime:renderOvertime,help:renderHelp
+    'day-plan':renderDayPlan,overtime:renderOvertime,help:renderHelp,'config-mgmt':renderConfigMgmt
   }:{
     dash:renderMemberDash,'my-ci':renderMyCi,'my-tasks':renderMyTasks,gantt:renderGantt,
     'team-view':renderTeamView,profile:renderProfile,progress:renderProgress,'day-plan':renderDayPlan,

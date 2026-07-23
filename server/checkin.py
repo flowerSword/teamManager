@@ -51,8 +51,15 @@ def checkin():
         if existing:
             # Already checked in today — re-check keeps original time, just updates status/remark if needed
             ci_time = existing['check_in_time'] or now_str()
-            # Use existing time to re-evaluate late status if no explicit status
-            status  = d.get('status') or detect_status(ci_time[11:16] if ci_time else '00:00')
+            # Auto-detect PRESENT vs LATE from the existing time; member cannot choose
+            # these two — only LEAVE/REMOTE/ABSENT allowed as override (same rule as
+            # the first-checkin branch below, so re-confirming doesn't clobber a
+            # correctly-detected LATE back to the dropdown's default PRESENT)
+            requested = d.get('status', '')
+            if requested in ('LEAVE', 'REMOTE', 'ABSENT'):
+                status = requested
+            else:
+                status = detect_status(ci_time[11:16] if ci_time else '00:00')
         else:
             now_hm = now_str()[11:16]
             if now_hm < '04:00':

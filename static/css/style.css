@@ -172,6 +172,8 @@ textarea.fi{resize:vertical;min-height:64px}
 .gantt-days{display:flex;flex:1;gap:0}
 .gantt-day{flex:1;text-align:center;color:var(--tx3);font-size:10px;min-width:20px}
 .gantt-day.today{color:var(--pri);font-weight:700}
+.gantt-day.weekend{opacity:.55}
+.gantt-day.holiday{color:var(--warn);font-weight:700;opacity:1}
 .gantt-row{display:flex;align-items:flex-start;padding:4px 0;border-bottom:1px solid rgba(51,65,85,.3)}
 .gantt-row:hover{background:var(--row-hover)}
 .gantt-row-hl{background:rgba(251,191,36,.1);border-left:3px solid #fbbf24;}
@@ -183,6 +185,8 @@ textarea.fi{resize:vertical;min-height:64px}
   transition:opacity .15s;cursor:pointer}
 .gantt-bar:hover{opacity:.85}
 .gantt-today-line{position:absolute;top:0;bottom:0;width:1px;background:rgba(239,68,68,.6);z-index:2}
+.gantt-wknd-mark{position:absolute;top:0;bottom:0;background:rgba(148,163,184,.14);pointer-events:none}
+.gantt-holiday-mark{position:absolute;top:0;bottom:0;background:rgba(239,68,68,.16);pointer-events:none}
 .type-REQUIREMENT{background:linear-gradient(90deg,#1d4ed8,#3b82f6)}
 .type-ISSUE{background:linear-gradient(90deg,#b91c1c,#ef4444)}
 .type-ONSITE{background:linear-gradient(90deg,#0e7490,#06b6d4)}

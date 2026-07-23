@@ -114,43 +114,45 @@ function renderTaskRows(isAdmin){
     <div class="sc sc-amber"><div class="sl">有风险</div><div class="sv">${all.filter(t=>t.has_risk&&!done.includes(t.status)).length}</div></div>`;
   }
   const {rows,page:p,pages}=paginate(filtered,taskPage);
+  const pmCols=`<th>项目</th><th>模块</th>`;
   let cols='';
-  if(taskTab==='ALL') cols=`<th>类型</th><th>负责人</th><th>状态</th><th>进度</th><th>计划开始</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
-  else if(taskTab==='REQUIREMENT') cols=`<th>需求单号</th><th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
-  else if(taskTab==='ISSUE') cols=`<th>问题单号</th><th>严重度</th><th>负责人</th><th>状态</th><th>计划解决</th><th>超期</th>`;
-  else if(taskTab==='ONSITE') cols=`<th>地点</th><th>负责人</th><th>状态</th><th>开始</th><th>结束</th>`;
-  else if(taskTab==='QUALITY') cols=`<th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
-  else cols=`<th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th>`;
+  if(taskTab==='ALL') cols=pmCols+`<th>类型</th><th>负责人</th><th>状态</th><th>进度</th><th>计划开始</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
+  else if(taskTab==='REQUIREMENT') cols=pmCols+`<th>需求单号</th><th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
+  else if(taskTab==='ISSUE') cols=pmCols+`<th>问题单号</th><th>严重度</th><th>负责人</th><th>状态</th><th>计划解决</th><th>超期</th>`;
+  else if(taskTab==='ONSITE') cols=pmCols+`<th>地点</th><th>负责人</th><th>状态</th><th>开始</th><th>结束</th>`;
+  else if(taskTab==='QUALITY') cols=pmCols+`<th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th><th>交付月</th><th>风险</th>`;
+  else cols=pmCols+`<th>负责人</th><th>状态</th><th>进度</th><th>计划结束</th>`;
   document.getElementById('task-table').innerHTML=`
   <table><thead><tr><th>标题</th>${cols}<th>操作</th></tr></thead><tbody>
   ${rows.map(t=>{
     const isMe=t.assignee_id===ME.id||t.created_by===ME.id;
+    const projModCols=`<td>${esc(t.project_name||'-')}</td><td>${esc(t.module||'-')}</td>`;
     let cells='';
     if(taskTab==='ALL'){
       const doneAll=['DELIVERED','COMPLETED','RESOLVED','CLOSED'];
-      cells=`<td>${tbadge(t.task_type)}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
+      cells=projModCols+`<td>${tbadge(t.task_type)}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
       <td style="min-width:80px"><div class="prog"><div class="pf" style="width:${t.progress||0}%;background:${t.has_risk?'var(--err)':'var(--pri)'}"></div></div><small style="color:var(--tx3)">${t.progress||0}%</small></td>
       <td>${t.plan_start_date||'-'}</td>
       <td style="color:${t.plan_end_date&&t.plan_end_date<today()&&!doneAll.includes(t.status)?'var(--err)':'inherit'}">${t.plan_end_date||'-'}</td>
       <td>${t.delivery_month||'-'}</td>
       <td>${t.has_risk&&!['DELIVERED','CANCELLED'].includes(t.status)?`<span style="color:var(--warn);font-size:11px">⚠ ${esc((t.risk_description||'').slice(0,12))}</span>`:'<span style="color:var(--tx3)">正常</span>'}`;
     }
-    else if(taskTab==='REQUIREMENT') cells=`<td>${esc(t.requirement_no||'-')}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
+    else if(taskTab==='REQUIREMENT') cells=projModCols+`<td>${esc(t.requirement_no||'-')}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
       <td style="min-width:80px"><div class="prog"><div class="pf" style="width:${t.progress||0}%;background:${t.has_risk?'var(--err)':'var(--pri)'}"></div></div><small style="color:var(--tx3)">${t.progress||0}%</small></td>
       <td style="color:${t.plan_end_date&&t.plan_end_date<today()&&t.status!=='DELIVERED'?'var(--err)':'inherit'}">${t.plan_end_date||'-'}</td>
       <td>${t.delivery_month||'-'}</td>
       <td>${t.has_risk&&!['DELIVERED','CANCELLED'].includes(t.status)?`<span style="color:var(--warn);font-size:11px">⚠ ${esc((t.risk_description||'').slice(0,12))}</span>`:'<span style="color:var(--tx3)">正常</span>'}`;
-    else if(taskTab==='ISSUE') cells=`<td>${esc(t.issue_no||'-')}</td><td><span class="bd ${SEV[t.severity]||'bd-gray'}">${t.severity||''}</span></td>
+    else if(taskTab==='ISSUE') cells=projModCols+`<td>${esc(t.issue_no||'-')}</td><td><span class="bd ${SEV[t.severity]||'bd-gray'}">${t.severity||''}</span></td>
       <td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
       <td style="color:${t.plan_end_date&&t.plan_end_date<today()&&!['RESOLVED','CLOSED'].includes(t.status)?'var(--err)':'inherit'}">${t.plan_end_date||'-'}</td>
       <td>${t.plan_end_date&&t.plan_end_date<today()&&!['RESOLVED','CLOSED','REJECTED'].includes(t.status)?'<span class="bd bd-red">超期</span>':''}`;
-    else if(taskTab==='ONSITE') cells=`<td>${esc(t.location||'')}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td><td>${t.plan_start_date||'-'}</td><td>${t.plan_end_date||'-'}`;
-    else if(taskTab==='QUALITY') cells=`<td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
+    else if(taskTab==='ONSITE') cells=projModCols+`<td>${esc(t.location||'')}</td><td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td><td>${t.plan_start_date||'-'}</td><td>${t.plan_end_date||'-'}`;
+    else if(taskTab==='QUALITY') cells=projModCols+`<td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
       <td style="min-width:80px"><div class="prog"><div class="pf" style="width:${t.progress||0}%;background:${t.has_risk?'var(--err)':'var(--pri)'}"></div></div><small style="color:var(--tx3)">${t.progress||0}%</small></td>
       <td style="color:${t.plan_end_date&&t.plan_end_date<today()&&t.status!=='DELIVERED'?'var(--err)':'inherit'}">${t.plan_end_date||'-'}</td>
       <td>${t.delivery_month||'-'}</td>
       <td>${t.has_risk&&!['DELIVERED','CANCELLED'].includes(t.status)?`<span style="color:var(--warn);font-size:11px">⚠ ${esc((t.risk_description||'').slice(0,12))}</span>`:'<span style="color:var(--tx3)">正常</span>'}`;
-    else cells=`<td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
+    else cells=projModCols+`<td>${esc(t.assignee_name||'')}</td><td>${sbadge(t.status)}</td>
       <td><div class="prog"><div class="pf" style="width:${t.progress||0}%;background:var(--pri)"></div></div><small style="color:var(--tx3)">${t.progress||0}%</small></td>
       <td>${t.plan_end_date||'-'}`;
     return`<tr ${isMe?'class="hi"':''}>
@@ -163,7 +165,7 @@ function renderTaskRows(isAdmin){
         ${ME.is_admin||t.created_by===ME.id?`<button class="btn btn-sm btn-err" onclick="delTask(${t.id})">删</button>`:''}
       </td>
     </tr>`;
-  }).join('')||'<tr><td colspan="8" class="empty">暂无任务，点击"新建任务"开始</td></tr>'}
+  }).join('')||'<tr><td colspan="10" class="empty">暂无任务，点击"新建任务"开始</td></tr>'}
   </tbody></table>${pgr(p,pages,`(function(pg){taskPage=pg;renderTaskRows(${isAdmin})})`)}`;
 }
 
@@ -181,14 +183,43 @@ function taskNoFieldHtml(type,t){
   return '';
 }
 
+// 需要项目字段（管理员在"配置管理"里维护 project_options）的任务类型
+const PROJECT_REQUIRED_TYPES=['REQUIREMENT','ISSUE','ONSITE','QUALITY'];
+function isProjectRequiredType(type){ return PROJECT_REQUIRED_TYPES.includes(type); }
+
+function projectFieldHtml(type,t,opts){
+  if(!isProjectRequiredType(type)) return '';
+  const cur=t.project_name||'';
+  const list=cur&&!opts.includes(cur)?[...opts,cur]:opts;
+  return `<div class="fgroup"><label class="flabel">所属项目 <span class="req">*</span></label>
+    <select id="tf-proj" class="fi">
+      <option value="">请选择</option>
+      ${list.map(v=>`<option value="${esc(v)}"${cur===v?' selected':''}>${esc(v)}</option>`).join('')}
+    </select></div>`;
+}
+
+function moduleFieldHtml(type,t,opts){
+  if(type!=='REQUIREMENT') return `<div class="fgroup"><label class="flabel">模块</label><input id="tf-mod" class="fi" value="${esc(t.module||'')}"></div>`;
+  const cur=t.module||'';
+  const list=cur&&!opts.includes(cur)?[...opts,cur]:opts;
+  return `<div class="fgroup"><label class="flabel">模块</label>
+    <select id="tf-mod" class="fi">
+      <option value="">不选择</option>
+      ${list.map(v=>`<option value="${esc(v)}"${cur===v?' selected':''}>${esc(v)}</option>`).join('')}
+    </select></div>`;
+}
+
 // ════════════════════════════════════════════
 // TASK MODAL
 // ════════════════════════════════════════════
+let _tfProjectOpts=[], _tfModuleOpts=[];
 async function openTaskModal(id){
-  const members=await GET('/members/active')||[];
+  const [members,cfg]=await Promise.all([GET('/members/active'),GET('/config')]);
   let t={task_type:taskTab==='ALL'?'REQUIREMENT':taskTab,status:'PENDING',priority:'MEDIUM',group_name:ME.group_name};
   if(id){t=await GET('/tasks/'+id)||t;}
-  const memOpts=members.filter(m=>!m.is_admin).map(m=>`<option value="${m.id}" ${t.assignee_id==m.id?'selected':''}>${esc(m.name)}</option>`).join('');
+  try{_tfProjectOpts=JSON.parse((cfg||{}).project_options||'[]');}catch{_tfProjectOpts=[];}
+  try{_tfModuleOpts=JSON.parse((cfg||{}).module_options||'[]');}catch{_tfModuleOpts=[];}
+  const memOpts=(members||[]).filter(m=>!m.is_admin).map(m=>`<option value="${m.id}" ${t.assignee_id==m.id?'selected':''}>${esc(m.name)}</option>`).join('');
   const isIssue=t.task_type==='ISSUE', isOnsite=t.task_type==='ONSITE';
   const statuses=taskStatusesFor(t.task_type);
 
@@ -207,6 +238,7 @@ async function openTaskModal(id){
       <option value="QUALITY"${t.task_type==='QUALITY'?' selected':''}>质量深耕</option>
     </select></div>
   <div id="tf-no-wrap">${taskNoFieldHtml(t.task_type,t)}</div>
+  <div id="tf-proj-wrap">${projectFieldHtml(t.task_type,t,_tfProjectOpts)}</div>
   <div class="frow c3">
     <div class="fgroup"><label class="flabel">状态</label>
       <select id="tf-status" class="fi">${statuses.map(s=>`<option value="${s}"${t.status===s?' selected':''}>${SZ[s]||s}</option>`).join('')}</select></div>
@@ -234,7 +266,7 @@ async function openTaskModal(id){
   </div>
   <div class="frow c3">
     <div class="fgroup"><label class="flabel">预估天数</label><input id="tf-est" class="fi" type="number" min="0" placeholder="工作日" value="${t.estimated_days||0}"></div>
-    <div class="fgroup"><label class="flabel">模块</label><input id="tf-mod" class="fi" value="${esc(t.module||'')}"></div>
+    <div id="tf-mod-wrap">${moduleFieldHtml(t.task_type,t,_tfModuleOpts)}</div>
     <div class="fgroup"><label class="flabel">版本</label><input id="tf-ver" class="fi" value="${esc(t.version||'')}"></div>
   </div>
   <div class="frow c2">
@@ -251,8 +283,10 @@ async function openTaskModal(id){
     var _psd=gv('tf-psd'),_ped=gv('tf-ped');
     if(!_psd||!_ped){toast('计划开始和结束日期必填','err');return;}
     if(_psd>_ped){toast('开始日期不能晚于结束日期','err');return;}
+    const _ttype=gv('tf-type');
+    if(isProjectRequiredType(_ttype)&&!gv('tf-proj')){toast('所属项目为必填项','err');return;}
     const payload={
-      title,description:gv('tf-desc'),task_type:gv('tf-type'),
+      title,description:gv('tf-desc'),task_type:_ttype,
       status:gv('tf-status'),priority:gv('tf-pri'),
       severity:gv('tf-sev')||null,
       assignee_id:gv('tf-aid')||null,assignee_name:gv('tf-an'),
@@ -263,6 +297,7 @@ async function openTaskModal(id){
       estimated_days:parseInt(gv('tf-est'))||0,
       has_risk:parseInt(gv('tf-risk'))||0,risk_description:gv('tf-rdesc'),
       module:gv('tf-mod'),version:gv('tf-ver'),
+      project_name:gv('tf-proj')||null,
       group_name:gv('tf-gn')||ME.group_name,
       requirement_no:gv('tf-rno')||null,issue_no:gv('tf-ino')||null,
     };
@@ -287,6 +322,10 @@ function updateTaskFormType(type){
     `<div class="fgroup"><label class="flabel">交付月份</label><input id="tf-dm" class="fi" type="month" value=""></div>`;
   const nw=document.getElementById('tf-no-wrap');
   if(nw) nw.innerHTML=taskNoFieldHtml(type,{});
+  const pw=document.getElementById('tf-proj-wrap');
+  if(pw) pw.innerHTML=projectFieldHtml(type,{},_tfProjectOpts);
+  const mw2=document.getElementById('tf-mod-wrap');
+  if(mw2) mw2.innerHTML=moduleFieldHtml(type,{},_tfModuleOpts);
 }
 
 async function delTask(id){
@@ -414,14 +453,14 @@ async function saveEditLog(tid,lid){
   const prog=gv('le-prog-'+lid); if(prog!=='') payload.progress=parseInt(prog);
   const hrs=gv('le-hours-'+lid); if(hrs!=='') payload.hours=parseFloat(hrs);
   const res=await PUT('/tasks/'+tid+'/logs/'+lid,payload);
-  if(res){toast('已保存');openLogPanel(tid);}
+  if(res){toast('已保存');openLogPanel(tid);refreshBgAfterLog();}
 }
 
 async function deleteLogEntry(tid,lid){
   if(!confirm('确认删除这条进展记录？此操作不可恢复')) return;
   await DEL('/tasks/'+tid+'/logs/'+lid);
   toast('已删除');
-  openLogPanel(tid);
+  openLogPanel(tid);refreshBgAfterLog();
 }
 
 async function submitLog(tid){
@@ -433,7 +472,20 @@ async function submitLog(tid){
   if(stat) payload.status=stat;
   if(hrs!=='') payload.hours=parseFloat(hrs);
   const res=await POST('/tasks/'+tid+'/logs',payload);
-  if(res){toast('进展已记录');openLogPanel(tid);}
+  if(res){toast('进展已记录');openLogPanel(tid);refreshBgAfterLog();}
+}
+
+// Log panel is opened as a modal on top of Gantt/task-list/dashboard pages;
+// those pages don't auto-refresh, so re-fetch/redraw whichever one is behind it
+// after a log add/edit/delete so progress bars update without a full page reload.
+function refreshBgAfterLog(){
+  const isAdminView=ME.is_admin&&VIEW_MODE==='admin';
+  if(PAGE==='gantt') loadGantt();
+  else if(PAGE==='admin-gantt') loadAdminGantt();
+  else if(PAGE==='my-tasks') loadTaskTable(false);
+  else if(PAGE==='tasks') loadTaskTable(true);
+  else if(PAGE==='member-view') renderMemberView();
+  else if(PAGE==='dash') isAdminView?renderAdminDash():renderMemberDash();
 }
 
 // ════════════════════════════════════════════
@@ -459,7 +511,8 @@ async function renderGantt(){
 
 async function loadGantt(){
   const params=ganttMonth?`year=${ganttYear}&month=${ganttMonth}`:`year=${ganttYear}`;
-  const tasks=await GET(`/tasks/gantt?${params}&member_id=${ME.id}`)||[];
+  const results=await Promise.all([GET(`/tasks/gantt?${params}&member_id=${ME.id}`),loadCnHolidays()]);
+  const tasks=results[0]||[];
   if(!tasks.length){
     document.getElementById('gantt-ct').innerHTML=`<div class="card"><div class="empty">暂无设置了计划日期的任务<br><small>在任务编辑中设置"计划开始"和"计划结束"日期</small></div></div>`;
     return;
@@ -477,9 +530,13 @@ async function loadGantt(){
   for(let d=0;d<totalDays;d+=dayStep){
     const dt=new Date(startDate); dt.setDate(dt.getDate()+d);
     const isToday=toLocalDateStr(dt)===today();
+    const meta=ganttDayMeta(dt);
     const lbl=ganttMonth?dt.getDate():(dt.getMonth()+1)+'/'+dt.getDate();
-    dayHdrs+=`<div class="gantt-day${isToday?' today':''}" style="flex:${dayStep};min-width:${ganttMonth?'20px':'24px'}">${lbl}</div>`;
+    const dayCls=(isToday?' today':'')+(meta.holiday?' holiday':meta.weekend?' weekend':'');
+    const dayTitle=meta.holiday?` title="${esc(meta.holiday)}"`:'';
+    dayHdrs+=`<div class="gantt-day${dayCls}" style="flex:${dayStep};min-width:${ganttMonth?'20px':'24px'}"${dayTitle}>${lbl}</div>`;
   }
+  const bgMarkers=buildGanttBgMarkers(startDate,totalDays);
 
   const COLORS={'REQUIREMENT':'#1d4ed8','ISSUE':'#b91c1c','ONSITE':'#0e7490','OTHER':'#6d28d9','QUALITY':'#15803d'};
 
@@ -494,6 +551,7 @@ async function loadGantt(){
     return`<div class="gantt-row" onclick="openLogPanel(${t.id})" style="cursor:pointer">
       <div class="gantt-name" title="${esc(t.title)}">${tbadge(t.task_type)} ${esc(t.title)}</div>
       <div class="gantt-track">
+        ${bgMarkers}
         <div class="gantt-bar" style="left:${barLeft}%;width:${barWidth}%;background:${done?'#047857':color};opacity:${done?.7:1}"
           title="${esc(t.title)} | ${t.plan_start_date} ~ ${t.plan_end_date} | ${t.progress||0}%">
           ${t.progress||0}%
@@ -508,6 +566,8 @@ async function loadGantt(){
     <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;font-size:12px">
       ${Object.entries(TZ).map(([k,v])=>`<span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:${COLORS[k]};display:inline-block"></span>${v}</span>`).join('')}
       <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:#92400e;display:inline-block"></span>有风险</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(148,163,184,.4);display:inline-block"></span>周末</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(239,68,68,.4);display:inline-block"></span>法定节假日</span>
       <span style="color:var(--tx3)">· 点击任务行可查看/添加日志</span>
     </div>
     <div class="gantt-wrap">
