@@ -350,7 +350,10 @@ function openModal(title,body,onSave,wide=false){
     </div>
   </div>`;
 }
-function closeModal(){document.getElementById('mw').innerHTML='';_modalSave=null;}
+function closeModal(){
+  document.getElementById('mw').innerHTML='';_modalSave=null;
+  const dd=document.getElementById('fs-shared-dd');if(dd)dd.style.display='none';
+}
 
 // ── Generic multi-select dropdown (used by list filters) ──────
 function toggleDropdown(id){
@@ -393,8 +396,25 @@ function fsComboHtml(fieldId,options,curVal,placeholder){
     <input type="text" id="${fieldId}-txt" class="fi" autocomplete="off" placeholder="${esc(placeholder||'')}"
       value="${esc(curVal||'')}" oninput="fsRenderDD('${fieldId}')" onfocus="fsOnFocus('${fieldId}')"
       onblur="setTimeout(()=>fsSyncText('${fieldId}'),150)">
-    <div id="${fieldId}-dd" class="fs-dd" style="display:none"></div>
   </div>`;
+}
+// Single dropdown panel appended directly to <body>, reused by every fs-combo field, instead of
+// one nested inside each field's own markup. `.modal` gets `backdrop-filter` (theme background-image
+// mode) which creates a new containing block for `position:fixed` descendants — a dropdown nested
+// inside the modal would then be positioned relative to the modal's (overflow:hidden) box instead of
+// the viewport, so our left/top math (computed in viewport coordinates) landed it clipped in a corner.
+// Living directly under <body> sidesteps that regardless of what ancestors do.
+let _fsActiveField=null;
+function _fsDD(){
+  let dd=document.getElementById('fs-shared-dd');
+  if(!dd){
+    dd=document.createElement('div');
+    dd.id='fs-shared-dd';
+    dd.className='fs-dd';
+    dd.style.display='none';
+    document.body.appendChild(dd);
+  }
+  return dd;
 }
 // Focusing the field (a click, same as opening a native <select>) always browses the
 // full option list — it must NOT be pre-filtered by whatever value is already selected.
@@ -406,9 +426,10 @@ function fsOnFocus(fieldId){
 }
 function fsRenderDD(fieldId,forceQuery){
   const f=_fsFields[fieldId]; if(!f) return;
-  document.querySelectorAll('.fs-dd').forEach(p=>{if(p.id!==fieldId+'-dd')p.style.display='none';});
   const txtEl=document.getElementById(fieldId+'-txt');
-  const q=forceQuery!==undefined?forceQuery:(txtEl?.value||'').trim();
+  if(!txtEl) return;
+  _fsActiveField=fieldId;
+  const q=forceQuery!==undefined?forceQuery:(txtEl.value||'').trim();
   const curVal=document.getElementById(fieldId)?.value||'';
   const freq=fsFreqGet(fieldId);
   let matches=f.options.filter(o=>fsMatch(q,o));
@@ -421,8 +442,6 @@ function fsRenderDD(fieldId,forceQuery){
   });
   const recommended=!q?Object.keys(freq).filter(v=>f.options.includes(v)&&freq[v]>0)
     .sort((a,b)=>freq[b]-freq[a]).slice(0,6):[];
-  const dd=document.getElementById(fieldId+'-dd');
-  if(!dd||!txtEl) return;
   let html='';
   if(!matches.length&&!recommended.length){
     html=`<div class="fs-dd-empty">无匹配项</div>`;
@@ -435,6 +454,7 @@ function fsRenderDD(fieldId,forceQuery){
     const rest=matches.filter(o=>!recommended.includes(o));
     html+=rest.slice(0,40).map(o=>`<div class="fs-dd-item${o===curVal?' sel':''}" data-val="${esc(o)}">${esc(o)}</div>`).join('');
   }
+  const dd=_fsDD();
   dd.innerHTML=html;
   dd.onclick=e=>{const it=e.target.closest('.fs-dd-item');if(it) fsPick(fieldId,it.dataset.val);};
   const rect=txtEl.getBoundingClientRect();
@@ -443,17 +463,22 @@ function fsRenderDD(fieldId,forceQuery){
   dd.style.width=rect.width+'px';
   dd.style.display='block';
 }
-// fixed-position dropdowns don't move with a scrolling ancestor (e.g. the modal body) — just close them
-document.addEventListener('scroll',()=>{document.querySelectorAll('.fs-dd').forEach(p=>p.style.display='none');},true);
+// fixed-position dropdown doesn't move with a scrolling ancestor (e.g. the modal body) — just close it
+document.addEventListener('scroll',()=>{const dd=document.getElementById('fs-shared-dd');if(dd)dd.style.display='none';},true);
 function fsPick(fieldId,value){
-  const h=document.getElementById(fieldId), t=document.getElementById(fieldId+'-txt'), dd=document.getElementById(fieldId+'-dd');
+  const h=document.getElementById(fieldId), t=document.getElementById(fieldId+'-txt');
   if(h) h.value=value;
   if(t) t.value=value;
+  const dd=document.getElementById('fs-shared-dd');
   if(dd) dd.style.display='none';
 }
 function fsSyncText(fieldId){
-  const h=document.getElementById(fieldId), t=document.getElementById(fieldId+'-txt'), dd=document.getElementById(fieldId+'-dd');
+  const h=document.getElementById(fieldId), t=document.getElementById(fieldId+'-txt');
   if(h&&t) t.value=h.value;
-  if(dd) dd.style.display='none';
+  // guard: don't let field A's delayed blur-close swallow a dropdown field B just opened in the meantime
+  if(_fsActiveField===fieldId){
+    const dd=document.getElementById('fs-shared-dd');
+    if(dd) dd.style.display='none';
+  }
 }
 
